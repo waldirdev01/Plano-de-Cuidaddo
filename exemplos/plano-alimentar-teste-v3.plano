@@ -1,0 +1,118 @@
+{
+  "formato": "plano-de-cuidado",
+  "versao": 3,
+  "id": "9f0a2e31-77bb-4d27-8c4f-2b5f4d3a1001",
+  "criadoEm": "2026-10-08T10:00:00-03:00",
+  "profissional": { "nome": "Dra. Ana Exemplo", "registro": "CRM-DF 00000" },
+  "paciente": { "nome": "Maria Exemplo", "nascimento": "1985-04-12" },
+  "inicio": "2026-10-08",
+  "retorno": { "data": "2026-11-07", "hora": "13:30" },
+  "metas": [
+    {
+      "id": "movimento",
+      "titulo": "Movimento do dia",
+      "descricao": "Faça a atividade combinada com a profissional.",
+      "seEntao": [],
+      "tipo": "checklist",
+      "itens": ["Atividade realizada"],
+      "lembretes": ["18:00"]
+    }
+  ],
+  "camposDiarios": [],
+  "alimentacao": {
+    "titulo": "Rotina alimentar de teste",
+    "modo": "rotina_mensal",
+    "meta": {
+      "kcal": 1800,
+      "proteina": 120,
+      "carboidrato": 210,
+      "gordura": 60,
+      "fibra": 25
+    },
+    "rotina": {
+      "padrao": {
+        "cafe": "cafe_ovo",
+        "almoco": "almoco_frango",
+        "jantar": "jantar_peixe"
+      },
+      "dias": {}
+    },
+    "refeicoes": [
+      {
+        "id": "cafe",
+        "titulo": "Café da manhã",
+        "horario": "07:30",
+        "opcoes": [
+          {
+            "id": "cafe_ovo",
+            "nome": "Ovo, fruta e aveia",
+            "grupo": "proteína",
+            "qualidade": "preferencial",
+            "quantidade": 1,
+            "unidade": "porção",
+            "nutrientes": { "kcal": 420, "proteina": 24, "carboidrato": 48, "gordura": 15, "fibra": 8 }
+          },
+          {
+            "id": "cafe_iogurte",
+            "nome": "Iogurte natural, fruta e aveia",
+            "grupo": "proteína",
+            "qualidade": "boa alternativa",
+            "quantidade": 1,
+            "unidade": "porção",
+            "nutrientes": { "kcal": 390, "proteina": 22, "carboidrato": 52, "gordura": 11, "fibra": 7 }
+          }
+        ]
+      },
+      {
+        "id": "almoco",
+        "titulo": "Almoço",
+        "horario": "12:30",
+        "opcoes": [
+          {
+            "id": "almoco_frango",
+            "nome": "Frango, arroz, feijão e legumes",
+            "grupo": "prato principal",
+            "qualidade": "preferencial",
+            "quantidade": 1,
+            "unidade": "porção",
+            "nutrientes": { "kcal": 620, "proteina": 44, "carboidrato": 74, "gordura": 16, "fibra": 12 }
+          },
+          {
+            "id": "almoco_carne",
+            "nome": "Carne, batata, feijão e salada",
+            "grupo": "prato principal",
+            "qualidade": "alternativa",
+            "quantidade": 1,
+            "unidade": "porção",
+            "nutrientes": { "kcal": 650, "proteina": 40, "carboidrato": 70, "gordura": 21, "fibra": 10 }
+          }
+        ]
+      },
+      {
+        "id": "jantar",
+        "titulo": "Jantar",
+        "horario": "19:30",
+        "opcoes": [
+          {
+            "id": "jantar_peixe",
+            "nome": "Peixe, mandioca e legumes",
+            "grupo": "prato principal",
+            "qualidade": "preferencial",
+            "quantidade": 1,
+            "unidade": "porção",
+            "nutrientes": { "kcal": 560, "proteina": 38, "carboidrato": 62, "gordura": 17, "fibra": 9 }
+          },
+          {
+            "id": "jantar_omelete",
+            "nome": "Omelete, arroz e salada",
+            "grupo": "prato principal",
+            "qualidade": "alternativa",
+            "quantidade": 1,
+            "unidade": "porção",
+            "nutrientes": { "kcal": 510, "proteina": 34, "carboidrato": 55, "gordura": 17, "fibra": 8 }
+          }
+        ]
+      }
+    ]
+  }
+}

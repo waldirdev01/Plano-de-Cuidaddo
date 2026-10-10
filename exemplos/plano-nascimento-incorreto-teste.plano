@@ -1,0 +1,88 @@
+{
+  "formato": "plano-de-cuidado",
+  "versao": 2,
+  "id": "teste-nascimento-incorreto",
+  "criadoEm": "2026-10-02T15:40:00-03:00",
+  "profissional": {
+    "nome": "Dra. Ana Exemplo",
+    "registro": "CRM-DF 00000"
+  },
+  "paciente": {
+    "nome": "Maria Exemplo",
+    "nascimento": "1985-04-13"
+  },
+  "inicio": "2026-10-03",
+  "retorno": {
+    "data": "2026-10-16",
+    "hora": "13:30"
+  },
+  "envioSemanal": {
+    "diaDaSemana": 5,
+    "ate": "18:00"
+  },
+  "metas": [
+    {
+      "id": "mesa",
+      "titulo": "Refeições à mesa, no prato",
+      "descricao": "Todas as refeições e lanches sentada, no prato.",
+      "seEntao": [
+        "Se eu for comer qualquer coisa, então me sento à mesa e ponho no prato.",
+        "Se eu me esquecer, faço assim que me lembrar."
+      ],
+      "tipo": "checklist",
+      "itens": [
+        "Café",
+        "Almoço",
+        "Jantar",
+        "Lanches"
+      ],
+      "lembretes": []
+    },
+    {
+      "id": "agua",
+      "titulo": "Água",
+      "descricao": "2 litros por dia: 2 copos até o meio-dia e 2 até as 15h.",
+      "seEntao": [
+        "Se o alarme tocar, então bebo um copo na hora."
+      ],
+      "tipo": "contador",
+      "alvo": 4,
+      "unidade": "copos de 500 ml",
+      "lembretes": [
+        "10:00",
+        "12:00"
+      ]
+    }
+  ],
+  "camposDiarios": [
+    {
+      "id": "atividade",
+      "titulo": "Atividade física",
+      "tipo": "texto"
+    },
+    {
+      "id": "emocao",
+      "titulo": "Emoção ao comer",
+      "tipo": "texto",
+      "ajuda": "Comeu por tédio, ansiedade ou estresse, e não por fome? Anote. Não é para se cobrar."
+    },
+    {
+      "id": "nota",
+      "titulo": "Nota do dia",
+      "tipo": "escala",
+      "min": 1,
+      "max": 10
+    }
+  ],
+  "secoes": [
+    {
+      "titulo": "Sinais de alerta",
+      "destaque": true,
+      "texto": "Dor ou aperto no peito, falta de ar fora do normal, tontura forte ou desmaio: procure atendimento de urgência ou ligue 192."
+    },
+    {
+      "titulo": "Atividade física",
+      "texto": "Continue com o treino que você já faz, ao menos 3 vezes por semana."
+    }
+  ]
+}
