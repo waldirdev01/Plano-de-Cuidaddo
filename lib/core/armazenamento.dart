@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
 import 'plano.dart';
+import 'retorno_acompanhamento.dart';
 
 class AcompanhamentoGuardado {
   const AcompanhamentoGuardado(this.plano, this.estado);
@@ -67,6 +68,57 @@ class Armazenamento {
     conflictAlgorithm: ConflictAlgorithm.replace,
   );
   Future<String?> papel() => config('papel');
+
+  /// Received snapshots live separately from patient plans and daily records.
+  /// Config is already included in backups; no destructive schema change.
+  Future<bool> guardarRetorno(RetornoAcompanhamento retorno) async {
+    final validado = RetornoAcompanhamento.parse(jsonEncode(retorno.data));
+    validado.conferirProfissional(
+      await config('profissional_nome') ?? '',
+      await config('profissional_registro') ?? '',
+    );
+    final chave = 'retorno_recebido_${retorno.id}';
+    final json = jsonEncode(validado.data);
+    return (await db).transaction((txn) async {
+      final existente = await txn.query(
+        'config',
+        where: 'chave=?',
+        whereArgs: [chave],
+      );
+      if (existente.isNotEmpty) {
+        if (existente.single['valor'] != json) {
+          throw const FormatException(
+            'Já existe outro conteúdo com o mesmo identificador. Nada foi substituído.',
+          );
+        }
+        return false;
+      }
+      await txn.insert('config', {'chave': chave, 'valor': json});
+      return true;
+    });
+  }
+
+  Future<List<RetornoAcompanhamento>> retornosRecebidos() async {
+    final nome = await config('profissional_nome') ?? '';
+    final registro = await config('profissional_registro') ?? '';
+    final rows = await (await db).query(
+      'config',
+      where: 'chave LIKE ?',
+      whereArgs: ['retorno_recebido_%'],
+    );
+    final retornos = <RetornoAcompanhamento>[];
+    for (final row in rows) {
+      final r = RetornoAcompanhamento.parse(row['valor'] as String);
+      try {
+        r.conferirProfissional(nome, registro);
+        retornos.add(r);
+      } on FormatException {
+        // A changed professional profile must not show another recipient's data.
+      }
+    }
+    retornos.sort((a, b) => b.exportadoEm.compareTo(a.exportadoEm));
+    return retornos;
+  }
 
   String _chaveAlimentacao(String planoId, String dia) =>
       'alimentacao_selecoes_${planoId}_$dia';

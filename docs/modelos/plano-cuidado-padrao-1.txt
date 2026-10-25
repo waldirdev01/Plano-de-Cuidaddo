@@ -1,0 +1,78 @@
+Plano de Cuidado
+PADRAO DO APLICATIVO: PLANO-CUIDADO/1
+
+DADOS DO PLANO
+Paciente: [PREENCHER nome completo]
+Nascimento: [PREENCHER DD/MM/AAAA]
+Consulta: [PREENCHER DD/MM/AAAA]
+Emissao: [PREENCHER DD/MM/AAAA]
+Inicio dos registros: [PREENCHER DD/MM/AAAA]
+Fim dos registros: [PREENCHER DD/MM/AAAA]
+Retorno: [PREENCHER DD/MM/AAAA]
+Hora do retorno: [PREENCHER HH:MM]
+Envio semanal: [PREENCHER dia da semana]
+Hora do envio: [PREENCHER HH:MM]
+Link pessoal: [PREENCHER endereço completo ou NENHUM]
+FIM DADOS DO PLANO
+
+META 1
+Titulo: [PREENCHER título da meta alimentar]
+Tipo: REFEICOES
+Lembretes: [PREENCHER HH:MM separados por vírgula ou NENHUM]
+Orientacao: [PREENCHER orientação diária e remissão às condições de cada refeição]
+FIM META
+
+META 2
+Titulo: [PREENCHER título da meta de contagem]
+Tipo: CONTAGEM
+Quantidade diaria: [PREENCHER número maior que zero]
+Unidade: [PREENCHER unidade completa da contagem]
+Distribuicao: [PREENCHER HH:MM=quantidade; HH:MM=quantidade ou LIVRE]
+Lembretes: [PREENCHER HH:MM separados por vírgula ou NENHUM]
+Orientacao: [PREENCHER orientação da médica coerente com os campos acima]
+FIM META
+
+REFEICAO 1
+Nome: Café da manhã
+Horario: [PREENCHER HH:MM]
+Regra: [PREENCHER OBRIGATORIA ou CONDICIONAL]
+Condicao para dispensar: [PREENCHER condição ou NAO SE APLICA]
+Prescricao: [PREENCHER alimentos e quantidades prescritos]
+FIM REFEICAO
+
+REFEICAO 2
+Nome: Almoço
+Horario: [PREENCHER HH:MM]
+Regra: [PREENCHER OBRIGATORIA ou CONDICIONAL]
+Condicao para dispensar: [PREENCHER condição ou NAO SE APLICA]
+Prescricao: [PREENCHER alimentos e quantidades prescritos]
+FIM REFEICAO
+
+REFEICAO 3
+Nome: Lanche da tarde
+Horario: [PREENCHER HH:MM]
+Regra: [PREENCHER OBRIGATORIA ou CONDICIONAL]
+Condicao para dispensar: [PREENCHER condição ou NAO SE APLICA]
+Prescricao: [PREENCHER alimentos e quantidades prescritos]
+FIM REFEICAO
+
+REFEICAO 4
+Nome: Jantar
+Horario: [PREENCHER HH:MM]
+Regra: [PREENCHER OBRIGATORIA ou CONDICIONAL]
+Condicao para dispensar: [PREENCHER condição ou NAO SE APLICA]
+Prescricao: [PREENCHER alimentos e quantidades prescritos]
+FIM REFEICAO
+
+ORIENTACOES LIVRES
+O que vamos cuidar
+[PREENCHER prioridades e mensagem para o paciente]
+Exames
+[PREENCHER texto ou Sem orientação adicional]
+Atividade física
+[PREENCHER texto ou Sem orientação adicional]
+Sinais de alerta
+[PREENCHER orientações da médica]
+Resumo e próximos passos
+[PREENCHER orientações, identificação e registro da profissional]
+FIM ORIENTACOES LIVRES

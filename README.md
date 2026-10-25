@@ -4,9 +4,13 @@ Aplicativo Flutter em português para lembrar e acompanhar metas e hábitos. Rep
 
 A profissional anexa o PDF da consulta como referência, define metas e exporta um `.plano`. O paciente importa esse arquivo e registra o acompanhamento. **Anexar PDF não extrai automaticamente metas nem alimentos.** O foco do app é acompanhar hábitos; ele não realiza diagnóstico ou consulta.
 
+**Fluxo de PDF em teste, 17/10/2026:** no modo profissional, **Importar PDF do plano** lê localmente o modelo **PLANO-CUIDADO/1**. Depois da conferência concluída e salva, **Exportar .plano conferido** gera o formato interno **4**, com período de registros, prescrições textuais e condições de dispensa. O paciente precisa do app atualizado; importa conferindo sua identidade, registra execução/dispensa e recebe lembretes locais se autorizados. Novas importações do PDF antigo são recusadas; rascunhos antigos salvos permanecem disponíveis, sem conversão v4 automática. Veja [regras do modelo](docs/padrao-pdf-v1.md) e [teste da exportação/paciente](docs/teste-exportacao-pdf-fase2.md). Não há IA, OCR ou transmissão automática de documentos.
+
 ## Comece por aqui
 
-Ambiente de referência: Flutter **3.44.9**, Dart **3.12.2**, Xcode **26.0.1**, iOS mínimo **14.0**. Versão do app: **1.1.0+3** em `pubspec.yaml`. Instale o SDK de referência antes de alterar dependências; ele não é incluído no Git. Testes SQLite no Linux podem exigir `libsqlite3-dev`.
+**Devolução do acompanhamento (17/10/2026):** para planos conferidos v4, o paciente usa **Hoje/ Semana > Exportar acompanhamento**, confere e compartilha um `.plano` cumulativo. No modo profissional, **Meus planos > Acompanhamentos recebidos > Abrir acompanhamento .plano** guarda e exibe os registros por dia, sem editar a prescrição nem o cadastro do paciente. Este arquivo tem formato próprio, diferente do `.plano` de prescrição. Não há envio automático, assinatura digital ou comprovação de recebimento. Ver [roteiro de teste da devolução](docs/teste-devolucao-acompanhamento.md).
+
+Ambiente de referência: Flutter **3.44.9**, Dart **3.12.2**, Xcode **26.0.1**, iOS mínimo **14.0**. Versão do app: **1.1.0+4** em `pubspec.yaml`, candidata para TestFlight; geração local não comprova upload ou aprovação da Apple. Instale o SDK de referência antes de alterar dependências; ele não é incluído no Git. Testes SQLite no Linux podem exigir `libsqlite3-dev`.
 
 ```sh
 git clone https://github.com/waldirdev01/Plano-de-Cuidaddo.git

@@ -12,8 +12,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:plano_de_cuidado/core/armazenamento.dart';
 import 'package:plano_de_cuidado/core/edicao_plano.dart';
 import 'package:plano_de_cuidado/core/plano.dart';
+import 'package:plano_de_cuidado/core/retorno_acompanhamento.dart';
+import 'package:plano_de_cuidado/core/importacao_pdf.dart';
 import 'package:plano_de_cuidado/ui/app.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'fixtures/pdf_texto.dart';
+import 'fixtures/rascunho_conferido.dart';
 
 class _Picker extends FilePickerPlatform {
   File? file;
@@ -58,6 +62,7 @@ void main() {
   late Directory dir;
   late _Picker picker;
   List<String> shared = [];
+  String shareResult = 'com.test.local';
   setUpAll(() async {
     await (FontLoader(
       'Karla',
@@ -80,7 +85,7 @@ void main() {
             shared = List<String>.from(
               (call.arguments as Map)['paths'] as List? ?? [],
             );
-            return 'com.test.local';
+            return shareResult;
           },
         );
     for (final channel in [
@@ -109,6 +114,7 @@ void main() {
     picker = _Picker();
     FilePickerPlatform.instance = picker;
     shared = [];
+    shareResult = 'com.test.local';
   });
   tearDownAll(() async {
     await (await Armazenamento.instance.db).close();
@@ -244,6 +250,7 @@ void main() {
         () => File(shared.single).readAsBytes(),
       );
       expect(Plano.parseBytes(exported!).id, saved.id);
+      expect(Plano.parseBytes(exported).data['versao'], 3);
       expect(
         File(shared.single).uri.pathSegments.last,
         startsWith('plano-paciente-'),
@@ -251,6 +258,393 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  RascunhoPdf rascunhoTeste() => RascunhoPdf.analisar(
+    TextoPdf(paginas: [textoPlanoPdfTeste], links: const [linkPdfTeste]),
+    nomeArquivo: 'documento-ficticio.pdf',
+    bytes: Uint8List.fromList(utf8.encode('%PDF-ficticio')),
+  );
+
+  testWidgets(
+    'PDF: rascunho com pendências salva e reabre sem alterar planos',
+    (tester) async {
+      final store = ArquivosRascunhoPdf(
+        diretorio: Directory('${dir.path}/pdf-salvar'),
+      );
+      final r = rascunhoTeste();
+      await pump(tester, ConferenciaPdfPage(rascunho: r, arquivos: store));
+      expect(find.text('Conferir PDF'), findsOneWidget);
+      expect(find.text('Exportar .plano'), findsNothing);
+      await tester.enterText(
+        label('Nome completo do paciente'),
+        'Ana Exemplo Completo',
+      );
+      await tap(tester, find.text('Salvar rascunho com pendências'));
+      final saved = (await tester.runAsync(store.listar))!.single;
+      expect(saved.nome, 'Ana Exemplo Completo');
+      expect(saved.campos['nascimento'], '1990-01-01');
+      expect(saved.estado, 'rascunho');
+      expect(
+        await tester.runAsync(() => Armazenamento.instance.planosCriados()),
+        isEmpty,
+      );
+      await pump(
+        tester,
+        ConferenciaPdfPage(
+          key: const ValueKey('reaberto'),
+          rascunho: saved,
+          arquivos: store,
+        ),
+      );
+      expect(label('Nome completo do paciente'), findsOneWidget);
+      expect(find.text('Ana Exemplo Completo'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'PDF: padrão válido conclui sem decisões extras e edição invalida confirmações',
+    (tester) async {
+      final store = ArquivosRascunhoPdf(
+        diretorio: Directory('${dir.path}/pdf-concluir'),
+      );
+      final r = rascunhoTeste();
+      await pump(tester, ConferenciaPdfPage(rascunho: r, arquivos: store));
+      await tap(tester, find.text('Concluir conferência'));
+      expect(find.text('Ainda falta conferir'), findsOneWidget);
+      expect(await tester.runAsync(store.listar), isEmpty);
+      await tap(tester, find.text('Continuar conferindo'));
+      await tester.drag(find.byType(Scrollable).first, const Offset(0, 20000));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(label('Nascimento do paciente'));
+      await tester.enterText(label('Nascimento do paciente'), '01011990');
+      for (final title in [
+        'Conferi o destinatário, o nome completo e o nascimento.',
+        'Conferi o período, retorno, envio e horários propostos.',
+        'Conferi a fidelidade das metas, refeições e textos e registrei as decisões necessárias.',
+      ]) {
+        await tap(tester, find.text(title));
+      }
+      await tap(tester, find.text('Concluir conferência'));
+      expect(find.text('Ainda falta conferir'), findsNothing);
+      final saved = (await tester.runAsync(store.listar))!.single;
+      expect(saved.estado, 'conferido');
+      expect(saved.campos['nascimento'], '1990-01-01');
+      await tester.drag(find.byType(Scrollable).first, const Offset(0, 20000));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(label('Nome completo do paciente'));
+      await tester.enterText(
+        label('Nome completo do paciente'),
+        'Nome Corrigido',
+      );
+      await tap(tester, find.text('Salvar rascunho com pendências'));
+      final edited = (await tester.runAsync(store.listar))!.single;
+      expect(edited.estado, 'rascunho');
+      expect(
+        (edited.data['confirmacoes'] as Map).values.every((v) => v == false),
+        true,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('PDF: tela de conferência aceita fonte ampliada', (tester) async {
+    await pump(
+      tester,
+      ConferenciaPdfPage(rascunho: rascunhoTeste()),
+      scale: 3.2,
+    );
+    await tap(tester, find.text('Metas reconhecidas (2)'));
+    await tap(tester, find.text('Refeições reconhecidas (4)'));
+    await tap(tester, find.text('Salvar rascunho com pendências'));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'PDF conferido exporta arquivo real, paciente importa e acompanha refeições',
+    (tester) async {
+      final r = rascunhoConferido();
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      r.campos['inicio'] = Plano.formatDia(
+        today.subtract(const Duration(days: 1)),
+      );
+      r.campos['fim'] = Plano.formatDia(today.add(const Duration(days: 1)));
+      r.campos['retorno'] = Plano.formatDia(today.add(const Duration(days: 2)));
+      await tester.runAsync(() async {
+        await Armazenamento.instance.setConfig(
+          'profissional_nome',
+          'Médica Exemplo',
+        );
+        await Armazenamento.instance.setConfig(
+          'profissional_registro',
+          'CRM TESTE',
+        );
+      });
+      final store = ArquivosRascunhoPdf(
+        diretorio: Directory('${dir.path}/exportar-pdf'),
+      );
+      await pump(tester, ConferenciaPdfPage(rascunho: r, arquivos: store));
+      await tap(tester, find.text('Exportar .plano conferido'));
+      expect(find.text('Conferir destinatário da exportação'), findsOneWidget);
+      expect(find.textContaining('Ana Exemplo Completo'), findsOneWidget);
+      await tap(tester, find.text('Compartilhar .plano'));
+      expect(shared, hasLength(1));
+      final file = File(shared.single);
+      final bytes = await tester.runAsync(file.readAsBytes);
+      final p = Plano.parseBytes(bytes!);
+      expect(p.data['versao'], 4);
+      expect(p.id, r.id);
+      expect(p.refeicoesPrescritas, hasLength(4));
+      expect(
+        await tester.runAsync(() => Armazenamento.instance.planosCriados()),
+        isEmpty,
+      );
+      await tester.runAsync(() async {
+        await Armazenamento.instance.setConfig('papel', 'paciente');
+        await Armazenamento.instance.salvarPerfilPaciente(
+          PerfilPaciente(
+            nome: 'Ana Exemplo Completo',
+            nascimento: '1990-01-01',
+          ),
+        );
+        await Armazenamento.instance.setConfig(
+          'permissao_notificacoes_pedida',
+          'sim',
+        );
+      });
+      await pump(tester, const PlanoCuidadoApp());
+      Future<void>? pending;
+      await tester.runAsync(() async {
+        pending = processarArquivoRecebido!(file);
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pumpAndSettle();
+      expect(find.text('Importar plano?'), findsOneWidget);
+      await tap(tester, find.text('Importar'));
+      await tester.runAsync(() => pending!);
+      await tester.pumpAndSettle();
+      await tap(tester, find.text('Fiz').first);
+      var records = (await tester.runAsync(
+        () => Armazenamento.instance.registros(p.id, Plano.formatDia(today)),
+      ))!;
+      expect(records[p.refeicoesPrescritas.first['id']], 'feito');
+      await tap(tester, find.text('Dispensado conforme plano').first);
+      records = (await tester.runAsync(
+        () => Armazenamento.instance.registros(p.id, Plano.formatDia(today)),
+      ))!;
+      expect(records[p.refeicoesPrescritas[2]['id']], 'dispensado');
+      await tap(tester, find.text('Alimentação').last);
+      expect(find.text('Minha rotina alimentar'), findsOneWidget);
+      expect(
+        find.textContaining('Não há cálculo de nutrientes'),
+        findsOneWidget,
+      );
+      await tap(tester, find.text('Semana').last);
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 150)),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Dispensado conforme plano'), findsOneWidget);
+      expect(find.text('Não confirmado'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'PDF sem conferência não permite exportar e prévia v4 não grava marcações',
+    (tester) async {
+      final r = rascunhoTeste();
+      await pump(tester, ConferenciaPdfPage(rascunho: r));
+      await tester.scrollUntilVisible(
+        find.text('Exportar .plano conferido'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      final button = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'Exportar .plano conferido'),
+      );
+      expect(button.onPressed, isNull);
+      expect(shared, isEmpty);
+      final p = planoPdfTeste();
+      await pump(tester, PreviaPlanoPage(plano: p));
+      await tap(tester, find.text('Dispensado conforme plano'));
+      expect(
+        await tester.runAsync(
+          () => Armazenamento.instance.registros(p.id, '2026-10-17'),
+        ),
+        isEmpty,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('PDF: contagem editada incompatível bloqueia conclusão', (
+    tester,
+  ) async {
+    final store = ArquivosRascunhoPdf(
+      diretorio: Directory('${dir.path}/pdf-soma'),
+    );
+    final r = rascunhoTeste();
+    for (final key in (r.data['confirmacoes'] as Map).keys) {
+      r.data['confirmacoes'][key] = true;
+    }
+    r.lista('metas').last['alvo'] = '5';
+    await pump(tester, ConferenciaPdfPage(rascunho: r, arquivos: store));
+    await tap(tester, find.text('Concluir conferência'));
+    expect(find.text('Ainda falta conferir'), findsOneWidget);
+    expect(find.textContaining('soma 4'), findsOneWidget);
+    expect(await tester.runAsync(store.listar), isEmpty);
+  });
+
+  testWidgets(
+    'paciente v4 aceita contagem decimal e seis refeições com fonte ampliada',
+    (tester) async {
+      final p = planoPdfTeste(refeicoes: 6);
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      p.data['inicio'] = Plano.formatDia(today);
+      p.data['fim'] = Plano.formatDia(today.add(const Duration(days: 1)));
+      p.data['retorno']['data'] = Plano.formatDia(
+        today.add(const Duration(days: 2)),
+      );
+      await pump(
+        tester,
+        Scaffold(
+          body: HojePage(plano: p, refresh: () async {}),
+        ),
+        scale: 3.2,
+      );
+      await tap(tester, find.text('Informar quantidade'));
+      await tester.enterText(label('Quantidade realizada'), '0,5');
+      await tap(tester, find.text('Registrar quantidade'));
+      final records = (await tester.runAsync(
+        () => Armazenamento.instance.registros(p.id, Plano.formatDia(today)),
+      ))!;
+      expect(records[p.metas[1]['id']], 0.5);
+      await tester.scrollUntilVisible(
+        find.text('Refeição de exemplo 6'),
+        350,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.text('Refeição de exemplo 6'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('PDF: regra condicional é visível e editável na conferência', (
+    tester,
+  ) async {
+    await pump(tester, ConferenciaPdfPage(rascunho: rascunhoTeste()));
+    await tap(tester, find.text('Refeições reconhecidas (4)'));
+    final condition = label('Condição para dispensar').at(2);
+    await tester.scrollUntilVisible(
+      condition,
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.ensureVisible(condition);
+    expect(
+      find.text('Quando não sentir fome, conforme orientação da profissional.'),
+      findsOneWidget,
+    );
+    await tester.enterText(
+      condition,
+      'Condição revisada na conferência fictícia.',
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'PDF: modelo antigo recusado mostra orientação sem alterar paciente',
+    (tester) async {
+      await tester.runAsync(() async {
+        await Armazenamento.instance.setConfig(
+          'profissional_nome',
+          'Médica Exemplo',
+        );
+        await Armazenamento.instance.setConfig(
+          'profissional_registro',
+          'CRM Teste',
+        );
+      });
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(
+        canalLeituraPdf,
+        (_) async => {
+          'paginas': [
+            textoPlanoPdfTeste.replaceAll(
+              'PADRAO DO APLICATIVO: PLANO-CUIDADO/1',
+              '',
+            ),
+          ],
+          'links': <String>[],
+        },
+      );
+      picker.file = File('test/fixtures/documento-teste.pdf');
+      try {
+        await pump(tester, ProfissionalPage(refresh: () async {}));
+        await tap(tester, find.text('Regras do modelo PDF'));
+        expect(find.text('Modelo PLANO-CUIDADO/1'), findsOneWidget);
+        await tap(tester, find.text('Entendi'));
+        await tap(tester, find.text('Importar PDF do plano'));
+        expect(find.text('PDF fora do padrão'), findsOneWidget);
+        expect(find.textContaining('Use o novo modelo'), findsOneWidget);
+        expect(
+          await tester.runAsync(() => Armazenamento.instance.planosCriados()),
+          isEmpty,
+        );
+      } finally {
+        messenger.setMockMethodCallHandler(canalLeituraPdf, null);
+      }
+    },
+  );
+
+  testWidgets('PDF: botão da médica lê documento e mantém paciente intocado', (
+    tester,
+  ) async {
+    await tester.runAsync(() async {
+      await Armazenamento.instance.setConfig(
+        'profissional_nome',
+        'Médica Exemplo',
+      );
+      await Armazenamento.instance.setConfig(
+        'profissional_registro',
+        'CRM Teste',
+      );
+    });
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(
+      canalLeituraPdf,
+      (_) async => {
+        'paginas': [textoPlanoPdfTeste],
+        'links': [linkPdfTeste],
+      },
+    );
+    picker.file = File('test/fixtures/documento-teste.pdf');
+    try {
+      await pump(tester, ProfissionalPage(refresh: () async {}));
+      await tap(tester, find.text('Importar PDF do plano'));
+      expect(find.text('Conferir PDF'), findsOneWidget);
+      expect(find.text('Paciente e datas'), findsOneWidget);
+      expect(
+        await tester.runAsync(() => Armazenamento.instance.perfilPaciente()),
+        isNull,
+      );
+      expect(
+        await tester.runAsync(() => Armazenamento.instance.planosCriados()),
+        isEmpty,
+      );
+      await tap(tester, find.byTooltip('Voltar'));
+      expect(find.text('Guardar esta conferência?'), findsOneWidget);
+      await tap(tester, find.text('Sair sem salvar'));
+      expect(find.text('Meus planos'), findsOneWidget);
+    } finally {
+      messenger.setMockMethodCallHandler(canalLeituraPdf, null);
+    }
+  });
 
   testWidgets('checklist, água, texto e notas salvam sem conversão indevida', (
     tester,
@@ -383,7 +777,7 @@ void main() {
       ),
     );
     await pump(tester, Scaffold(body: SemanaPage(plano: p)));
-    await tap(tester, find.text('Enviar semana'));
+    await tap(tester, find.text('Enviar imagem da semana'));
     for (var attempt = 0; attempt < 50 && shared.isEmpty; attempt++) {
       await tester.pump();
       await tester.runAsync(
@@ -710,6 +1104,196 @@ void main() {
       expect(find.text('Paciente Certo'), findsNothing);
     },
   );
+  Plano planoRetornoTeste() {
+    final p = planoPdfTeste();
+    final now = DateTime.now();
+    p.data['inicio'] = Plano.formatDia(now.subtract(const Duration(days: 1)));
+    p.data['fim'] = Plano.formatDia(now.add(const Duration(days: 2)));
+    p.data['retorno']['data'] = Plano.formatDia(
+      now.add(const Duration(days: 3)),
+    );
+    return Plano.parse(jsonEncode(p.data));
+  }
+
+  testWidgets(
+    'devolução: arquivo real abre na médica sem alterar paciente; salvar não registra envio',
+    (tester) async {
+      final p = planoRetornoTeste();
+      final hoje = Plano.formatDia(DateTime.now());
+      final agua = p.metas.last['id'] as String;
+      final refeicao = p.camposRefeicoes.first['id'] as String;
+      await tester.runAsync(() async {
+        await Armazenamento.instance.salvarPerfilPaciente(
+          PerfilPaciente(
+            nome: p.nomePaciente,
+            nascimento: p.nascimentoPaciente!,
+          ),
+        );
+        await Armazenamento.instance.importar(p);
+        await Armazenamento.instance.salvarRegistro(p.id, hoje, agua, 1.5);
+        await Armazenamento.instance.salvarRegistro(
+          p.id,
+          hoje,
+          refeicao,
+          'nao_feito',
+        );
+      });
+      await pump(
+        tester,
+        Scaffold(
+          body: HojePage(plano: p, refresh: () async {}),
+        ),
+      );
+      await tap(tester, find.text('Exportar acompanhamento'));
+      expect(find.text('Conferir acompanhamento'), findsOneWidget);
+      await tap(tester, find.text('Compartilhar acompanhamento .plano'));
+      expect(shared, hasLength(1));
+      final arquivo = File(shared.single);
+      final retorno = RetornoAcompanhamento.parse(arquivo.readAsStringSync());
+      expect(retorno.registros[hoje][agua], 1.5);
+      expect(retorno.registros[hoje][refeicao], 'nao_feito');
+      expect(retorno.plano.data.containsKey('pdf'), false);
+      await tap(tester, find.text('Só salvei / ainda não enviei'));
+      expect(
+        await tester.runAsync(() => Armazenamento.instance.ultimoEnvio(p.id)),
+        isNull,
+      );
+      await tap(tester, find.byType(BackButton));
+      await tester.runAsync(() async {
+        await Armazenamento.instance.setConfig('papel', 'profissional');
+        await Armazenamento.instance.setConfig(
+          'profissional_nome',
+          p.nomeProfissional,
+        );
+        await Armazenamento.instance.setConfig(
+          'profissional_registro',
+          'CRM TESTE',
+        );
+      });
+      await pump(tester, const PlanoCuidadoApp());
+      Future<void>? pendente;
+      await tester.runAsync(() async {
+        pendente = processarArquivoRecebido!(arquivo);
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pumpAndSettle();
+      expect(find.text('Receber acompanhamento?'), findsOneWidget);
+      await tap(tester, find.text('Receber e visualizar'));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 400)),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Acompanhamento do paciente'),
+        findsOneWidget,
+        reason: tester
+            .widgetList<Text>(find.byType(Text))
+            .map((t) => t.data)
+            .join(' | '),
+      );
+      await tap(tester, find.byKey(ValueKey('retorno-dia-$hoje')));
+      expect(find.text('Não feito'), findsOneWidget);
+      expect(find.text('Não confirmado'), findsWidgets);
+      expect(find.text('1.5 ${p.metas.last['unidade']}'), findsOneWidget);
+      expect(find.text('Compartilhar acompanhamento .plano'), findsNothing);
+      await tap(tester, find.byType(BackButton));
+      await tester.runAsync(() => pendente!);
+      expect(
+        await tester.runAsync(() => Armazenamento.instance.retornosRecebidos()),
+        hasLength(1),
+      );
+      expect(
+        (await tester.runAsync(() => Armazenamento.instance.planoAtivo()))!.id,
+        p.id,
+      );
+      expect(
+        (await tester.runAsync(
+          () => Armazenamento.instance.registros(p.id, hoje),
+        ))![agua],
+        1.5,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'devolução: cancelar não registra envio; confirmação explícita registra',
+    (tester) async {
+      final p = planoRetornoTeste();
+      final r = RetornoAcompanhamento.criar(p, {});
+      await tester.runAsync(() async {
+        await Armazenamento.instance.salvarPerfilPaciente(
+          PerfilPaciente(
+            nome: p.nomePaciente,
+            nascimento: p.nascimentoPaciente!,
+          ),
+        );
+        await Armazenamento.instance.importar(p);
+      });
+      shareResult = '';
+      await pump(
+        tester,
+        DetalheRetornoPage(retorno: r, exportar: true),
+        scale: 2,
+      );
+      await tap(tester, find.text('Compartilhar acompanhamento .plano'));
+      expect(find.text('Você enviou à médica?'), findsNothing);
+      expect(
+        await tester.runAsync(() => Armazenamento.instance.ultimoEnvio(p.id)),
+        isNull,
+      );
+      shareResult = 'com.test.local';
+      await tap(tester, find.text('Compartilhar acompanhamento .plano'));
+      await tap(tester, find.text('Já enviei à médica'));
+      expect(
+        await tester.runAsync(() => Armazenamento.instance.ultimoEnvio(p.id)),
+        Plano.formatDia(r.ate),
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'devolução: paciente e profissional errado bloqueiam antes de revelar nome',
+    (tester) async {
+      final p = planoRetornoTeste();
+      p.data['paciente']['nome'] = 'NOME RESERVADO DO RETORNO';
+      final r = RetornoAcompanhamento.criar(p, {});
+      final f = File('${dir.path}/retorno-errado.plano')
+        ..writeAsStringSync(jsonEncode(r.data));
+      await tester.runAsync(
+        () => Armazenamento.instance.setConfig('papel', 'paciente'),
+      );
+      await pump(tester, const PlanoCuidadoApp());
+      await tester.runAsync(() => processarArquivoRecebido!(f));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('Troque para o modo profissional'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('NOME RESERVADO DO RETORNO'), findsNothing);
+      await tester.runAsync(() async {
+        await Armazenamento.instance.setConfig('papel', 'profissional');
+        await Armazenamento.instance.setConfig('profissional_nome', 'Outra');
+        await Armazenamento.instance.setConfig(
+          'profissional_registro',
+          'OUTRO',
+        );
+      });
+      await tester.runAsync(() => processarArquivoRecebido!(f));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('NOME RESERVADO DO RETORNO'), findsNothing);
+      expect(
+        await tester.runAsync(() => Armazenamento.instance.retornosRecebidos()),
+        isEmpty,
+      );
+      expect(
+        await tester.runAsync(() => Armazenamento.instance.perfilPaciente()),
+        isNull,
+      );
+    },
+  );
+
   test(
     'lembretes locais respeitam janela de 60 e desligamento cancela tudo',
     () async {
@@ -749,6 +1333,72 @@ void main() {
               const MethodChannel('dexterous.com/flutter/local_notifications'),
               null,
             );
+      }
+    },
+  );
+
+  test(
+    'PDF v4 agenda refeições e metas somente até o fim dos registros',
+    () async {
+      final calls = <MethodCall>[];
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      const channel = MethodChannel(
+        'dexterous.com/flutter/local_notifications',
+      );
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        return true;
+      });
+      try {
+        final p = planoPdfTeste();
+        final now = DateTime.now();
+        final first = DateTime(
+          now.year,
+          now.month,
+          now.day,
+        ).add(const Duration(days: 1));
+        final last = first.add(const Duration(days: 1));
+        p.data['inicio'] = Plano.formatDia(first);
+        p.data['fim'] = Plano.formatDia(last);
+        p.data['retorno']['data'] = Plano.formatDia(
+          first.add(const Duration(days: 6)),
+        );
+        await Lembretes.instance.reagendar(Plano.parse(jsonEncode(p.data)));
+        final scheduled = calls
+            .where((c) => c.method == 'zonedSchedule')
+            .map((c) => c.arguments as Map)
+            .toList();
+        final daily = scheduled
+            .where(
+              (c) => ![
+                'Enviar semana',
+                'Retorno amanhã',
+                'Enviar acompanhamento final',
+              ].contains(c['title']),
+            )
+            .toList();
+        expect(daily, hasLength(12));
+        expect(
+          daily.where((c) => c['title'] == 'Lanche da tarde'),
+          hasLength(2),
+        );
+        expect(
+          daily
+              .where((c) => c['title'] == 'Lanche da tarde')
+              .every(
+                (c) => (c['body'] as String).contains('condição de dispensa'),
+              ),
+          true,
+        );
+        for (final item in daily) {
+          final at = DateTime.parse(item['scheduledDateTime'] as String);
+          expect(at.isBefore(first), false);
+          expect(at.isBefore(last.add(const Duration(days: 1))), true);
+        }
+        expect(scheduled.any((c) => c['title'] == 'Retorno amanhã'), true);
+      } finally {
+        messenger.setMockMethodCallHandler(channel, (_) async => true);
       }
     },
   );

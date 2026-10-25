@@ -15,6 +15,19 @@ class Plano {
       (data['profissional'] as Map?)?['nome'] as String? ?? 'Profissional';
   DateTime get inicio => parseDia(data['inicio'] as String);
   DateTime get retorno => parseDia((data['retorno'] as Map)['data'] as String);
+  DateTime get fim =>
+      data['versao'] == 4 ? parseDia(data['fim'] as String) : retorno;
+  List<Map<String, dynamic>> get refeicoesPrescritas =>
+      (data['refeicoesPrescritas'] as List? ?? const [])
+          .cast<Map<String, dynamic>>();
+  List<Map<String, dynamic>> get camposRefeicoes => [
+    for (final m in refeicoesPrescritas) {...m, 'tipo': 'refeicao'},
+  ];
+  List<Map<String, dynamic>> get camposRegistraveis => [
+    ...metas.where((m) => m['tipo'] != 'refeicoes'),
+    ...camposDiarios,
+    ...camposRefeicoes,
+  ];
   List<Map<String, dynamic>> get metas =>
       (data['metas'] as List? ?? const []).cast<Map<String, dynamic>>();
   List<Map<String, dynamic>> get camposDiarios =>
@@ -62,14 +75,15 @@ class Plano {
         'Este arquivo não é um Plano de Cuidado válido.',
       );
     }
-    if ((decoded['versao'] as int) > 3) {
+    if ((decoded['versao'] as int) > 4) {
       throw const FormatException(
         'Este plano foi feito numa versão mais nova do app. Atualize o app.',
       );
     }
     if (decoded['versao'] != 1 &&
         decoded['versao'] != 2 &&
-        decoded['versao'] != 3) {
+        decoded['versao'] != 3 &&
+        decoded['versao'] != 4) {
       throw const FormatException('A versão deste plano não é compatível.');
     }
     try {
@@ -82,7 +96,9 @@ class Plano {
         throw const FormatException('Faltam dados de identificação do plano.');
       }
       final nascimento = (decoded['paciente'] as Map)['nascimento'];
-      if (decoded['versao'] == 2 || nascimento != null) {
+      if (decoded['versao'] == 2 ||
+          decoded['versao'] == 4 ||
+          nascimento != null) {
         if (nascimento is! String) {
           throw const FormatException(
             'Informe a data de nascimento do paciente.',
@@ -103,11 +119,84 @@ class Plano {
       }
       final metas = decoded['metas'] as List? ?? const [];
       final diarios = decoded['camposDiarios'] as List? ?? const [];
-      _validarCampos(metas);
+      _validarCampos(metas, versao: decoded['versao'] as int);
       _validarCampos(diarios);
+      final refeicoes = decoded['refeicoesPrescritas'] as List? ?? const [];
+      if (decoded['versao'] < 4 &&
+          (decoded.containsKey('fim') ||
+              decoded.containsKey('refeicoesPrescritas'))) {
+        throw const FormatException(
+          'Período de registros e refeições prescritas exigem a versão 4 do plano.',
+        );
+      }
+      if (decoded['versao'] == 4) {
+        final fim = parseDia(decoded['fim'] as String);
+        if (fim.isBefore(inicio) || fim.isAfter(retorno)) {
+          throw const FormatException(
+            'O fim dos registros deve estar entre o início e o retorno.',
+          );
+        }
+        if (refeicoes.length > 8) {
+          throw const FormatException(
+            'O plano suporta até oito refeições prescritas.',
+          );
+        }
+        final nomes = <String>{};
+        for (final m in refeicoes) {
+          if (m is! Map ||
+              m['id'] is! String ||
+              (m['id'] as String).isEmpty ||
+              m['titulo'] is! String ||
+              (m['titulo'] as String).trim().isEmpty ||
+              !nomes.add(
+                PerfilPaciente.normalizarNome(m['titulo'] as String),
+              ) ||
+              !_horaValida(m['horario']) ||
+              !['obrigatoria', 'condicional'].contains(m['regra']) ||
+              m['condicao'] is! String ||
+              (m['condicao'] as String).trim().isEmpty ||
+              m['descricao'] is! String ||
+              (m['descricao'] as String).trim().isEmpty) {
+            throw const FormatException(
+              'Uma refeição prescrita está incompleta ou repetida.',
+            );
+          }
+          final condicao = PerfilPaciente.normalizarNome(
+            m['condicao'] as String,
+          );
+          if ((m['regra'] == 'obrigatoria' && condicao != 'nao se aplica') ||
+              (m['regra'] == 'condicional' && condicao == 'nao se aplica')) {
+            throw const FormatException(
+              'Confira a condição de dispensa da refeição.',
+            );
+          }
+        }
+        if (metas.any((m) => m['tipo'] == 'refeicoes') && refeicoes.isEmpty) {
+          throw const FormatException(
+            'A meta alimentar exige as refeições prescritas.',
+          );
+        }
+        final link = decoded['linkMonteSeuPrato'];
+        if (link is! String) {
+          throw const FormatException('Confira o link pessoal do plano.');
+        }
+        if (link.isNotEmpty) {
+          final u = Uri.tryParse(link);
+          if (u == null ||
+              u.scheme != 'https' ||
+              u.host != 'drapriscilakcarvalho.com.br' ||
+              u.path != '/monte-seu-prato.html' ||
+              !RegExp(r'(?:^|&)p=[A-Za-z0-9_-]+').hasMatch(u.fragment)) {
+            throw const FormatException(
+              'O link pessoal do plano está inválido.',
+            );
+          }
+        }
+      }
       final ids = [
         ...metas,
         ...diarios,
+        ...refeicoes,
       ].map((field) => field['id'] as String).toList();
       if (ids.toSet().length != ids.length) {
         throw const FormatException(
@@ -123,6 +212,11 @@ class Plano {
         }
       }
       if (decoded['alimentacao'] != null) {
+        if (refeicoes.isNotEmpty) {
+          throw const FormatException(
+            'Use somente uma rotina alimentar: prescrita ou com opções nutricionais.',
+          );
+        }
         final rawAlimentacao = decoded['alimentacao'];
         if (rawAlimentacao is! Map) {
           throw const FormatException('O plano alimentar está inválido.');
@@ -173,7 +267,7 @@ class Plano {
     return parse(source);
   }
 
-  static void _validarCampos(List fields) {
+  static void _validarCampos(List fields, {int versao = 3}) {
     const types = {'checklist', 'contador', 'sim_nao', 'texto', 'escala'};
     for (final raw in fields) {
       if (raw is! Map ||
@@ -181,7 +275,8 @@ class Plano {
           (raw['id'] as String).trim().isEmpty ||
           raw['titulo'] is! String ||
           (raw['titulo'] as String).trim().isEmpty ||
-          !types.contains(raw['tipo'])) {
+          !(types.contains(raw['tipo']) ||
+              (versao == 4 && raw['tipo'] == 'refeicoes'))) {
         throw const FormatException(
           'Uma meta ou anotação usa um tipo não suportado.',
         );
@@ -196,9 +291,42 @@ class Plano {
       if (raw['tipo'] == 'contador' &&
           (raw['alvo'] is! num ||
               raw['alvo'] < 0 ||
+              !(raw['alvo'] as num).isFinite ||
               raw['unidade'] is! String ||
               (raw['unidade'] as String).trim().isEmpty)) {
         throw const FormatException('O contador do plano está incompleto.');
+      }
+      if (versao == 4 && raw['tipo'] == 'contador') {
+        final distribution = raw['distribuicao'];
+        if (distribution is! String) {
+          throw const FormatException('Informe a distribuição da contagem.');
+        }
+        if (PerfilPaciente.normalizarNome(distribution) != 'livre') {
+          var sum = 0.0;
+          final hours = <String>{};
+          for (final part in distribution.split(';')) {
+            final pair = part.split('=');
+            final amount = pair.length == 2
+                ? num.tryParse(pair[1].trim().replaceAll(',', '.'))
+                : null;
+            if (pair.length != 2 ||
+                !_horaValida(pair[0].trim()) ||
+                !hours.add(pair[0].trim()) ||
+                amount == null ||
+                !amount.isFinite ||
+                amount <= 0) {
+              throw const FormatException(
+                'A distribuição da contagem está inválida.',
+              );
+            }
+            sum += amount;
+          }
+          if ((sum - (raw['alvo'] as num)).abs() > 0.000001) {
+            throw const FormatException(
+              'A soma da distribuição não corresponde à quantidade diária.',
+            );
+          }
+        }
       }
       if (raw['tipo'] == 'escala' &&
           (raw['min'] is! num ||

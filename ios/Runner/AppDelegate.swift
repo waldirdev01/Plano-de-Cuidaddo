@@ -16,6 +16,26 @@ import UIKit
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     let channel = FlutterEventChannel(name: "br.com.waldirdev01.plano_cuidado/incoming-files", binaryMessenger: engineBridge.applicationRegistrar.messenger())
     channel.setStreamHandler(self)
+    let pdfChannel = FlutterMethodChannel(name: "br.com.waldirdev01.plano_cuidado/pdf", binaryMessenger: engineBridge.applicationRegistrar.messenger())
+    pdfChannel.setMethodCallHandler { call, result in
+      guard call.method == "extrair" else { result(FlutterMethodNotImplemented); return }
+      guard let args = call.arguments as? [String: Any],
+            let bytes = args["bytes"] as? FlutterStandardTypedData else {
+        result(FlutterError(code: "pdf_invalido", message: "Selecione um PDF válido.", details: nil)); return
+      }
+      DispatchQueue.global(qos: .userInitiated).async {
+        do {
+          let extracted = try LeitorPdfNativo.extrair(bytes.data)
+          DispatchQueue.main.async { result(extracted) }
+        } catch {
+          // Do not include document contents or patient information in diagnostics.
+          let message = error.localizedDescription
+          DispatchQueue.main.async {
+            result(FlutterError(code: "pdf_invalido", message: message, details: nil))
+          }
+        }
+      }
+    }
   }
 
   func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {

@@ -67,7 +67,7 @@ class Lembretes {
         if (p.length != 2) continue;
         final h = int.tryParse(p[0]), m = int.tryParse(p[1]);
         if (h == null || m == null || h > 23 || m > 59) continue;
-        for (final day in diasDoPlano(from, plano.retorno)) {
+        for (final day in diasDoPlano(from, plano.fim)) {
           candidates.add((
             at: DateTime(day.year, day.month, day.day, h, m),
             title: meta['titulo'] as String,
@@ -75,6 +75,25 @@ class Lembretes {
             id: serial++,
           ));
         }
+      }
+    }
+    for (final meal in plano.refeicoesPrescritas) {
+      final parts = (meal['horario'] as String).split(':');
+      for (final day in diasDoPlano(from, plano.fim)) {
+        candidates.add((
+          at: DateTime(
+            day.year,
+            day.month,
+            day.day,
+            int.parse(parts[0]),
+            int.parse(parts[1]),
+          ),
+          title: meal['titulo'] as String,
+          body: meal['regra'] == 'condicional'
+              ? 'Confira a refeição e a condição de dispensa do seu plano.'
+              : 'Confira a refeição prescrita e registre se fez.',
+          id: serial++,
+        ));
       }
     }
     final alimentacao = plano.alimentacao;
@@ -85,7 +104,7 @@ class Lembretes {
         final p = hour.split(':');
         final h = int.tryParse(p[0]), m = int.tryParse(p[1]);
         if (h == null || m == null) continue;
-        for (final day in diasDoPlano(from, plano.retorno)) {
+        for (final day in diasDoPlano(from, plano.fim)) {
           candidates.add((
             at: DateTime(day.year, day.month, day.day, h, m),
             title: meal.titulo,
@@ -100,7 +119,7 @@ class Lembretes {
       final limit = (weekly['ate'] as String? ?? '18:00').split(':');
       final hour = int.tryParse(limit.first) ?? 18;
       final minute = int.tryParse(limit.length > 1 ? limit[1] : '0') ?? 0;
-      for (final day in diasDoPlano(from, plano.retorno)) {
+      for (final day in diasDoPlano(from, plano.fim)) {
         if (day.weekday % 7 != weekly['diaDaSemana']) continue;
         if (sent != null && !day.isAfter(Plano.parseDia(sent))) continue;
         final at = DateTime(
@@ -113,11 +132,22 @@ class Lembretes {
         candidates.add((
           at: at,
           title: 'Enviar semana',
-          body:
-              'Hoje é dia de mandar a sua semana até as ${weekly['ate'] ?? '18:00'}.',
+          body: plano.data['versao'] == 4
+              ? 'Exporte e envie o acompanhamento à médica até as ${weekly['ate'] ?? '18:00'}.'
+              : 'Hoje é dia de mandar a sua semana até as ${weekly['ate'] ?? '18:00'}.',
           id: serial++,
         ));
       }
+    }
+    if (plano.data['versao'] == 4 &&
+        (sent == null || Plano.parseDia(sent).isBefore(plano.fim))) {
+      candidates.add((
+        at: DateTime(plano.fim.year, plano.fim.month, plano.fim.day, 18),
+        title: 'Enviar acompanhamento final',
+        body:
+            'Exporte o acompanhamento em .plano e envie à médica antes do retorno.',
+        id: serial++,
+      ));
     }
     final eve = plano.retorno.subtract(const Duration(days: 1));
     candidates.add((

@@ -40,6 +40,11 @@ Map<String, dynamic> duplicarPlano(
   String nome,
   String registro,
 ) {
+  if (original.data['versao'] == 4) {
+    throw const FormatException(
+      'Para outro paciente, preencha e importe um novo PDF no padrão. Não duplique uma exportação conferida.',
+    );
+  }
   final data = copiarDados(original.data);
   data['id'] = novoId();
   data['versao'] = 3;

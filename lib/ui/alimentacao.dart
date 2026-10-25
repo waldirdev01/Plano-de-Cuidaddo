@@ -1,5 +1,64 @@
 part of 'app.dart';
 
+/// Prescription text only: no nutrient totals or substitutions are invented.
+class RotinaPrescritaPage extends StatelessWidget {
+  const RotinaPrescritaPage({super.key, required this.plano});
+  final Plano plano;
+  @override
+  Widget build(BuildContext context) => ListView(
+    padding: const EdgeInsets.all(16),
+    children: [
+      Text(
+        'Minha rotina alimentar',
+        style: Theme.of(context).textTheme.headlineSmall,
+      ),
+      const SizedBox(height: 8),
+      const Text(
+        'Prescrição conferida pela profissional. Registre cada refeição na aba Hoje. Não há cálculo de nutrientes ou troca automática de alimentos.',
+      ),
+      for (final meal in plano.refeicoesPrescritas)
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${meal['horario']} · ${meal['titulo']}',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                Text(
+                  meal['regra'] == 'condicional'
+                      ? 'Condicional: ${meal['condicao']}'
+                      : 'Refeição obrigatória',
+                ),
+                const SizedBox(height: 8),
+                SelectableText(meal['descricao'] as String),
+              ],
+            ),
+          ),
+        ),
+      if ((plano.data['linkMonteSeuPrato'] as String? ?? '').isNotEmpty) ...[
+        const SizedBox(height: 12),
+        const Text('Link pessoal do Monte seu prato'),
+        SelectableText(plano.data['linkMonteSeuPrato'] as String),
+        OutlinedButton.icon(
+          onPressed: () async {
+            await Clipboard.setData(
+              ClipboardData(text: plano.data['linkMonteSeuPrato'] as String),
+            );
+            if (context.mounted) {
+              _message(context, 'Link copiado. Cole no navegador para abrir.');
+            }
+          },
+          icon: const Icon(Icons.copy),
+          label: const Text('Copiar link pessoal'),
+        ),
+      ],
+    ],
+  );
+}
+
 class AlimentacaoPage extends StatefulWidget {
   const AlimentacaoPage({super.key, required this.plano, this.preview = false});
   final Plano? plano;
@@ -42,8 +101,8 @@ class _AlimentacaoPageState extends State<AlimentacaoPage> {
     final initial = selected ?? day ?? today;
     final bounded = initial.isBefore(p.inicio)
         ? p.inicio
-        : initial.isAfter(p.retorno)
-        ? p.retorno
+        : initial.isAfter(p.fim)
+        ? p.fim
         : initial;
     if (mounted) setState(() => loading = true);
     final key = Plano.formatDia(bounded);
@@ -80,7 +139,7 @@ class _AlimentacaoPageState extends State<AlimentacaoPage> {
       context: context,
       initialDate: day!,
       firstDate: p.inicio,
-      lastDate: p.retorno,
+      lastDate: p.fim,
       helpText: 'Escolha o dia da rotina alimentar',
     );
     if (picked != null) await _load(selected: picked);

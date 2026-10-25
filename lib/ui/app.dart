@@ -19,11 +19,17 @@ import '../core/alimentacao.dart';
 import '../core/edicao_plano.dart';
 import '../core/lembretes.dart';
 import '../core/native_bridge.dart';
+import '../core/importacao_pdf.dart';
+import '../core/exportacao_pdf.dart';
+import '../core/padrao_pdf.dart';
 import '../core/plano.dart';
+import '../core/retorno_acompanhamento.dart';
 
 part 'profissional.dart';
 part 'paciente.dart';
 part 'alimentacao.dart';
+part 'importacao_pdf.dart';
+part 'retorno_acompanhamento.dart';
 
 const fundo = Color(0xFFF6F4EF);
 const verde = Color(0xFF4A5541);
@@ -132,6 +138,22 @@ class _PlanoCuidadoAppState extends State<PlanoCuidadoApp> {
     importando = true;
     try {
       final raw = await file.readAsBytes();
+      if (raw.length > 20 * 1024 * 1024) {
+        throw const FormatException('Selecione um arquivo de até 20 MB.');
+      }
+      dynamic envelope;
+      try {
+        envelope = jsonDecode(utf8.decode(raw));
+      } on FormatException {
+        // Keep the existing PDF/encoding diagnostics in Plano.parseBytes.
+      }
+      if (envelope is Map &&
+          envelope['formato'] == RetornoAcompanhamento.formato) {
+        final retorno = RetornoAcompanhamento.parse(utf8.decode(raw));
+        if (!mounted) return;
+        await _receberRetorno(navigatorKey.currentContext!, retorno);
+        return;
+      }
       final plano = Plano.parseBytes(raw);
       if (await Armazenamento.instance.perfilPaciente() == null) {
         if (!mounted) return;
@@ -149,7 +171,7 @@ class _PlanoCuidadoAppState extends State<PlanoCuidadoApp> {
         builder: (ctx) => AlertDialog(
           title: const Text('Importar plano?'),
           content: Text(
-            'Plano de ${plano.nomeProfissional} para ${plano.nomePaciente}, de ${fmtDia.format(plano.inicio)} a ${fmtDia.format(plano.retorno)}.',
+            'Plano de ${plano.nomeProfissional} para ${plano.nomePaciente}. Registros de ${fmtDia.format(plano.inicio)} a ${fmtDia.format(plano.fim)}. Retorno: ${fmtDia.format(plano.retorno)}.',
           ),
           actions: [
             TextButton(
@@ -169,7 +191,10 @@ class _PlanoCuidadoAppState extends State<PlanoCuidadoApp> {
       if (papel == null || papel.isEmpty) {
         await Armazenamento.instance.setConfig('papel', 'paciente');
       }
-      await Lembretes.instance.reagendar(plano);
+      await Lembretes.instance.reagendar(
+        plano,
+        ativo: await Armazenamento.instance.config('lembretes') != 'nao',
+      );
       final asked = await Armazenamento.instance.config(
         'permissao_notificacoes_pedida',
       );
@@ -381,11 +406,16 @@ class _EntradaScreenState extends State<EntradaScreen> {
         },
       );
     }
-    final hasFood = plano?.alimentacao != null;
+    final hasFood =
+        plano?.alimentacao != null ||
+        (plano?.refeicoesPrescritas.isNotEmpty ?? false);
     final pages = hasFood
         ? [
             HojePage(plano: plano, refresh: recarregar),
-            AlimentacaoPage(plano: plano),
+            if (plano!.refeicoesPrescritas.isNotEmpty)
+              RotinaPrescritaPage(plano: plano!)
+            else
+              AlimentacaoPage(plano: plano),
             SemanaPage(plano: plano),
             MeuPlanoPage(plano: plano),
             AjustesPage(refresh: recarregar, plano: plano),
@@ -524,10 +554,7 @@ class _EntradaScreenState extends State<EntradaScreen> {
       final r = await FilePicker.pickFiles(type: FileType.any);
       if (r.isEmpty) return;
       final f = r.single;
-      final bytes = f.path != null ? await File(f.path!).readAsBytes() : null;
-      if (bytes == null) {
-        throw const FormatException('Não foi possível ler este arquivo.');
-      }
+      final bytes = await f.readAsBytes();
       final temp = File(
         '${(await getTemporaryDirectory()).path}/${DateTime.now().microsecondsSinceEpoch}.plano',
       );
@@ -579,8 +606,8 @@ class _HojePageState extends State<HojePage> {
     day = selected ?? DateTime(today.year, today.month, today.day);
     final activeDay = day.isBefore(p.inicio)
         ? p.inicio
-        : day.isAfter(p.retorno)
-        ? p.retorno
+        : day.isAfter(p.fim)
+        ? p.fim
         : day;
     values = widget.preview
         ? {}
@@ -630,9 +657,9 @@ class _HojePageState extends State<HojePage> {
               ? null
               : () async {
                   final now = DateTime.now();
-                  final last = now.isBefore(p.retorno)
+                  final last = now.isBefore(p.fim)
                       ? DateTime(now.year, now.month, now.day)
-                      : p.retorno;
+                      : p.fim;
                   final selected = await showDatePicker(
                     context: context,
                     initialDate: day,
@@ -654,6 +681,22 @@ class _HojePageState extends State<HojePage> {
           style: const TextStyle(color: apoio, fontSize: 16),
         ),
         const SizedBox(height: 16),
+        if (p.data['versao'] == 4)
+          OutlinedButton.icon(
+            onPressed: widget.preview
+                ? null
+                : () => _abrirExportacaoAcompanhamento(context, p),
+            icon: const Icon(Icons.ios_share),
+            label: const Text('Exportar acompanhamento'),
+          ),
+        if (p.data['versao'] == 4)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text(
+              'Registros até ${fmtDia.format(p.fim)}. Sem marcação significa não confirmado, não prova de que você não fez. Refeições condicionais podem ser dispensadas somente pela regra do plano.',
+              style: const TextStyle(color: apoio),
+            ),
+          ),
         ...p.metas.map(
           (m) => _CampoCard(
             key: ValueKey('${p.id}-${Plano.formatDia(day)}-${m['id']}'),
@@ -664,6 +707,15 @@ class _HojePageState extends State<HojePage> {
           ),
         ),
         ...p.camposDiarios.map(
+          (m) => _CampoCard(
+            key: ValueKey('${p.id}-${Plano.formatDia(day)}-${m['id']}'),
+            field: m,
+            value: values[m['id']],
+            enabled: !readOnly,
+            onChange: (v) => _save(m['id'] as String, v),
+          ),
+        ),
+        ...p.camposRefeicoes.map(
           (m) => _CampoCard(
             key: ValueKey('${p.id}-${Plano.formatDia(day)}-${m['id']}'),
             field: m,
@@ -718,7 +770,7 @@ class _SemanaPageState extends State<SemanaPage> {
   Future<void> _load() async {
     if (widget.plano == null) return;
     final p = widget.plano!;
-    final range = semanaDoPlano(anchor, p.inicio, p.retorno);
+    final range = semanaDoPlano(anchor, p.inicio, p.fim);
     records = widget.preview
         ? {}
         : await Armazenamento.instance.registrosPeriodo(
@@ -733,9 +785,9 @@ class _SemanaPageState extends State<SemanaPage> {
   Widget build(BuildContext context) {
     final p = widget.plano;
     if (p == null) return _Vazio(onImport: () => _pickImport(context));
-    final range = semanaDoPlano(anchor, p.inicio, p.retorno);
+    final range = semanaDoPlano(anchor, p.inicio, p.fim);
     final days = diasDoPlano(range.de, range.ate);
-    final fields = [...p.metas, ...p.camposDiarios];
+    final fields = p.camposRegistraveis;
     return Column(
       children: [
         Padding(
@@ -761,7 +813,7 @@ class _SemanaPageState extends State<SemanaPage> {
               ),
               IconButton(
                 tooltip: 'Próxima semana',
-                onPressed: range.ate.isBefore(p.retorno)
+                onPressed: range.ate.isBefore(p.fim)
                     ? () {
                         anchor = range.ate.add(const Duration(days: 1));
                         _load();
@@ -827,6 +879,7 @@ class _SemanaPageState extends State<SemanaPage> {
                                       records[Plano.formatDia(d)]?[f['id']
                                           as String],
                                       f,
+                                      dia: d,
                                     ),
                                   ),
                                 ),
@@ -846,13 +899,23 @@ class _SemanaPageState extends State<SemanaPage> {
           top: false,
           child: Padding(
             padding: const EdgeInsets.all(12),
-            child: SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: busy || widget.preview ? null : _sendWeek,
-                icon: const Icon(Icons.ios_share),
-                label: const Text('Enviar semana'),
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (p.data['versao'] == 4)
+                  FilledButton.icon(
+                    onPressed: widget.preview
+                        ? null
+                        : () => _abrirExportacaoAcompanhamento(context, p),
+                    icon: const Icon(Icons.ios_share),
+                    label: const Text('Exportar acompanhamento'),
+                  ),
+                TextButton.icon(
+                  onPressed: busy || widget.preview ? null : _sendWeek,
+                  icon: const Icon(Icons.ios_share),
+                  label: const Text('Enviar imagem da semana'),
+                ),
+              ],
             ),
           ),
         ),
@@ -927,8 +990,8 @@ class _SemanaPageState extends State<SemanaPage> {
           ? p.inicio
           : Plano.parseDia(last).add(const Duration(days: 1));
       final now = DateTime.now();
-      final until = DateTime(now.year, now.month, now.day).isAfter(p.retorno)
-          ? p.retorno
+      final until = DateTime(now.year, now.month, now.day).isAfter(p.fim)
+          ? p.fim
           : DateTime(now.year, now.month, now.day);
       if (from.isAfter(until)) {
         if (!mounted) return;
@@ -941,7 +1004,7 @@ class _SemanaPageState extends State<SemanaPage> {
         until,
       );
       final days = diasDoPlano(from, until);
-      final fields = [...p.metas, ...p.camposDiarios];
+      final fields = p.camposRegistraveis;
       final rows = <TableRow>[
         TableRow(
           children: [
@@ -957,7 +1020,11 @@ class _SemanaPageState extends State<SemanaPage> {
               _Cell(fmtDia.format(d), head: true, fontSize: 20),
               ...fields.map(
                 (f) => _Cell(
-                  _display(map[Plano.formatDia(d)]?[f['id'] as String], f),
+                  _display(
+                    map[Plano.formatDia(d)]?[f['id'] as String],
+                    f,
+                    dia: d,
+                  ),
                   fontSize: 20,
                 ),
               ),
@@ -1035,7 +1102,7 @@ class _SemanaPageState extends State<SemanaPage> {
               'Semana de ${p.nomePaciente}, ${fmtDia.format(from)} a ${fmtDia.format(until)}',
         ),
       );
-      if (result.status == ShareResultStatus.success) {
+      if (result.status == ShareResultStatus.success && p.data['versao'] != 4) {
         await Armazenamento.instance.registrarEnvio(
           p.id,
           DateTime.now(),
@@ -1072,6 +1139,11 @@ class MeuPlanoPage extends StatelessWidget {
           style: const TextStyle(color: apoio, fontSize: 17),
         ),
         const SizedBox(height: 12),
+        if (p.data['versao'] == 4)
+          Text(
+            'Registros de ${fmtDia.format(p.inicio)} a ${fmtDia.format(p.fim)}. Retorno em ${fmtDia.format(p.retorno)}. O PDF é o original importado; as correções da conferência aparecem nos campos do aplicativo, sem reescrever o documento.',
+            style: const TextStyle(color: apoio),
+          ),
         ...sections
             .where((s) => s['destaque'] == true)
             .map(
@@ -1564,7 +1636,7 @@ class _HistoricoPageState extends State<_HistoricoPage> {
                     style: const TextStyle(fontSize: 17),
                   ),
                   subtitle: Text(
-                    '${fmtDia.format(p.inicio)} a ${fmtDia.format(p.retorno)} • ${p.nomeProfissional}',
+                    '${fmtDia.format(p.inicio)} a ${fmtDia.format(p.fim)} • ${p.nomeProfissional}',
                   ),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => Navigator.of(context).push(
@@ -1597,9 +1669,7 @@ class _CampoCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final type = field['tipo'];
-    final count = type == 'contador' && value is num
-        ? (value as num).toInt()
-        : 0;
+    final count = type == 'contador' && value is num ? value as num : 0;
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
@@ -1621,6 +1691,13 @@ class _CampoCard extends StatelessWidget {
               ),
             const SizedBox(height: 8),
             if (type == 'checklist') ..._checklist(context),
+            if (field['controleConfirmacao'] == true &&
+                value == null &&
+                ['contador', 'sim_nao'].contains(type))
+              const Text(
+                'Ainda não confirmado',
+                style: TextStyle(color: apoio),
+              ),
             if (type == 'contador')
               Row(
                 children: [
@@ -1645,6 +1722,11 @@ class _CampoCard extends StatelessWidget {
                   ),
                 ],
               ),
+            if (type == 'contador' && field['controleConfirmacao'] == true)
+              TextButton(
+                onPressed: enabled ? () => _informarContagem(context) : null,
+                child: const Text('Informar quantidade'),
+              ),
             if (type == 'sim_nao')
               Wrap(
                 spacing: 10,
@@ -1665,6 +1747,48 @@ class _CampoCard extends StatelessWidget {
                   ),
                 ],
               ),
+            if (type == 'refeicao') ...[
+              if (value == 'dispensado' && field['regra'] != 'condicional')
+                const Text(
+                  'Dispensa registrada anteriormente. A regra atual é obrigatória.',
+                  style: TextStyle(color: apoio),
+                ),
+              Text(
+                'Horário: ${field['horario']} · ${field['regra'] == 'condicional' ? 'Condicional' : 'Obrigatória'}',
+              ),
+              if (field['regra'] == 'condicional')
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                    'Pode dispensar: ${field['condicao']}',
+                    style: const TextStyle(color: verde),
+                  ),
+                ),
+              if (value == null)
+                const Text(
+                  'Ainda não confirmado',
+                  style: TextStyle(color: apoio),
+                ),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final entry in {
+                    'feito': 'Fiz',
+                    'nao_feito': 'Não fiz',
+                    if (field['regra'] == 'condicional')
+                      'dispensado': 'Dispensado conforme plano',
+                  }.entries)
+                    ChoiceChip(
+                      label: Text(entry.value),
+                      selected: value == entry.key,
+                      onSelected: enabled
+                          ? (selected) => onChange(selected ? entry.key : null)
+                          : null,
+                    ),
+                ],
+              ),
+            ],
             if (type == 'texto')
               TextFormField(
                 initialValue: value as String?,
@@ -1702,6 +1826,60 @@ class _CampoCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _informarContagem(BuildContext context) async {
+    final controller = TextEditingController(
+      text: value == null ? '' : '$value',
+    );
+    final form = GlobalKey<FormState>();
+    final result = await showDialog<num>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(field['titulo'] as String),
+        content: SingleChildScrollView(
+          child: Form(
+            key: form,
+            child: TextFormField(
+              controller: controller,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: InputDecoration(
+                labelText: 'Quantidade realizada',
+                helperText: field['unidade'] as String,
+              ),
+              validator: (value) {
+                final n = num.tryParse(
+                  (value ?? '').trim().replaceAll(',', '.'),
+                );
+                return n == null || !n.isFinite || n < 0
+                    ? 'Informe um número válido, maior ou igual a zero.'
+                    : null;
+              },
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (form.currentState!.validate()) {
+                Navigator.pop(
+                  ctx,
+                  num.parse(controller.text.trim().replaceAll(',', '.')),
+                );
+              }
+            },
+            child: const Text('Registrar quantidade'),
+          ),
+        ],
+      ),
+    );
+    if (result != null) onChange(result);
   }
 
   List<Widget> _checklist(BuildContext context) {
@@ -1809,8 +1987,22 @@ class EmergencyNotice extends StatelessWidget {
   );
 }
 
-String _display(dynamic v, Map<String, dynamic> f) {
-  if (v == null) return '—';
+String _display(dynamic v, Map<String, dynamic> f, {DateTime? dia}) {
+  if (v == null && dia != null && dia.isAfter(DateTime.now())) return '—';
+  if (f['tipo'] == 'refeicao') {
+    return switch (v) {
+      'feito' => 'Feito',
+      'nao_feito' => 'Não feito',
+      'dispensado' =>
+        f['regra'] == 'condicional'
+            ? 'Dispensado conforme plano'
+            : 'Dispensado (regra anterior)',
+      _ => 'Não confirmado',
+    };
+  }
+  if (v == null) {
+    return f['controleConfirmacao'] == true ? 'Não confirmado' : '—';
+  }
   if (v is List) return v.join(', ');
   if (v is bool) return v ? 'Sim' : 'Não';
   if (f['tipo'] == 'contador') return '$v ${f['unidade'] ?? ''}';
@@ -1822,7 +2014,7 @@ Future<void> _pickImport(BuildContext context) async {
     final r = await FilePicker.pickFiles();
     if (r.isEmpty) return;
     final file = r.single;
-    final bytes = await File(file.path!).readAsBytes();
+    final bytes = await file.readAsBytes();
     final temp = File(
       '${(await getTemporaryDirectory()).path}/${DateTime.now().microsecondsSinceEpoch}.plano',
     );

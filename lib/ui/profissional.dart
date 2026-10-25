@@ -29,6 +29,9 @@ class _ProfissionalPageState extends State<ProfissionalPage> {
   List<Plano> plans = [];
   String search = '', nome = '', registro = '';
   bool loading = true;
+  bool importandoPdf = false;
+  final arquivosPdf = ArquivosRascunhoPdf();
+  List<RascunhoPdf> rascunhosPdf = [];
   @override
   void initState() {
     super.initState();
@@ -40,12 +43,14 @@ class _ProfissionalPageState extends State<ProfissionalPage> {
     final list = await db.planosCriados();
     final name = await db.config('profissional_nome') ?? '';
     final reg = await db.config('profissional_registro') ?? '';
+    final drafts = await arquivosPdf.listar();
     if (!mounted) return;
     setState(() {
       plans = list;
       nome = name;
       registro = reg;
       loading = false;
+      rascunhosPdf = drafts;
     });
     if (nome.isEmpty || registro.isEmpty) await _perfil();
   }
@@ -108,6 +113,13 @@ class _ProfissionalPageState extends State<ProfissionalPage> {
   }
 
   Future<void> _editar({Plano? plano, bool duplicar = false}) async {
+    if (plano?.data['versao'] == 4) {
+      _message(
+        context,
+        'Este plano veio de uma conferência de PDF. Edite o rascunho em Rascunhos de PDF e conclua novamente antes de exportar. Para outro paciente, preencha e importe um novo PDF.',
+      );
+      return;
+    }
     if (nome.isEmpty || registro.isEmpty) {
       await _perfil();
       if (nome.isEmpty || registro.isEmpty) return;
@@ -124,6 +136,63 @@ class _ProfissionalPageState extends State<ProfissionalPage> {
     );
     await _load();
     await widget.refresh();
+  }
+
+  Future<void> _conferirPdf(RascunhoPdf draft) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            ConferenciaPdfPage(rascunho: draft, arquivos: arquivosPdf),
+      ),
+    );
+    await _load();
+  }
+
+  Future<void> _importarPdf() async {
+    setState(() => importandoPdf = true);
+    try {
+      final files = await FilePicker.pickFiles(type: FileType.any);
+      if (files.isEmpty) return;
+      final file = files.single;
+      if ((await file.length() ?? 0) > 10 * 1024 * 1024) {
+        throw const FormatException('Selecione um PDF de até 10 MB.');
+      }
+      final bytes = await file.readAsBytes();
+      final texto = await TextoPdf.ler(bytes);
+      final draft = RascunhoPdf.analisar(
+        texto,
+        nomeArquivo: file.name,
+        bytes: bytes,
+      );
+      if (!mounted) return;
+      await _conferirPdf(draft);
+    } on FormatException catch (e) {
+      if (mounted) {
+        await showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('PDF fora do padrão'),
+            content: SingleChildScrollView(child: Text(e.message)),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Entendi'),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        _message(
+          context,
+          'Não foi possível importar este PDF. Os planos existentes não foram alterados.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => importandoPdf = false);
+    }
   }
 
   @override
@@ -181,6 +250,81 @@ class _ProfissionalPageState extends State<ProfissionalPage> {
                   onChanged: (v) => setState(() => search = v),
                 ),
                 const SizedBox(height: 16),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.fact_check_outlined),
+                  label: const Text('Acompanhamentos recebidos'),
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const RetornosRecebidosPage(),
+                    ),
+                  ),
+                ),
+                FilledButton.icon(
+                  onPressed: importandoPdf ? null : _importarPdf,
+                  icon: const Icon(Icons.picture_as_pdf_outlined),
+                  label: Text(
+                    importandoPdf
+                        ? 'Lendo PDF neste aparelho…'
+                        : 'Importar PDF do plano',
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                    'Use o modelo PLANO-CUIDADO/1 com texto selecionável. Importe, confira, conclua e exporte o .plano para o paciente com o app atualizado.',
+                    style: TextStyle(color: apoio),
+                  ),
+                ),
+                TextButton.icon(
+                  icon: const Icon(Icons.help_outline),
+                  label: const Text('Regras do modelo PDF'),
+                  onPressed: () => showDialog<void>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('Modelo PLANO-CUIDADO/1'),
+                      content: const SingleChildScrollView(
+                        child: Text(
+                          'Preencha uma cópia do modelo editável e exporte como PDF com texto selecionável. Não renomeie os rótulos ou marcadores.\n\n'
+                          'Datas: DD/MM/AAAA. Horários: HH:MM. Identifique o paciente pelo nome completo e nascimento.\n\n'
+                          'Metas diárias: REFEICOES, CONTAGEM ou CONFIRMACAO. De uma a oito metas e até oito refeições.\n\n'
+                          'Na CONTAGEM, a soma de HH:MM=quantidade deve igualar a quantidade diária. Use LIVRE se não houver distribuição fixa. Lembretes são horários separados, ou NENHUM.\n\n'
+                          'Refeição OBRIGATORIA usa condição NAO SE APLICA. Refeição CONDICIONAL exige a condição de dispensa.\n\n'
+                          'Link pessoal: endereço completo com https e #p=..., ou NENHUM.\n\n'
+                          'Textos em ORIENTACOES LIVRES são somente referência. Não viram tarefas, doses ou alarmes. Não há interpretação clínica ou IA.\n\n'
+                          'Após concluir e salvar a conferência, use Exportar .plano conferido. O paciente importa no app atualizado e permite os lembretes. Sem confirmação não é prova de que a ação não foi feita.',
+                        ),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          child: const Text('Entendi'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                if (rascunhosPdf.isNotEmpty) ...[
+                  Text(
+                    'Rascunhos de PDF',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  ...rascunhosPdf.map(
+                    (r) => Card(
+                      child: ListTile(
+                        title: Text(
+                          r.nome.isEmpty ? 'Paciente a conferir' : r.nome,
+                        ),
+                        subtitle: Text(
+                          '${r.estado == 'conferido' ? 'Conferência concluída' : 'Em conferência'} · ${r.data['pdf']['nome']}',
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => _conferirPdf(r),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 FilledButton.icon(
                   onPressed: () => _editar(),
                   icon: const Icon(Icons.add),
@@ -268,9 +412,8 @@ String? _obrigatorio(String? v) =>
 
 Future<void> _exportarPlano(BuildContext context, Plano plano) async {
   try {
-    // Pendente: alinhar esta versão à criação/editor v3 e testar o arquivo
-    // compartilhado com alimentação; veja docs/continuidade.md.
-    final dados = copiarDados(plano.data)..['versao'] = 2;
+    // Never downgrade a contract: v4 semantics must not be ignored by old apps.
+    final dados = copiarDados(plano.data);
     Plano.parse(jsonEncode(dados));
     final dir = await getTemporaryDirectory();
     final file = await File(
@@ -1316,12 +1459,18 @@ class _PreviaPlanoPageState extends State<PreviaPlanoPage> {
   int tab = 0;
   @override
   Widget build(BuildContext context) {
-    final hasFood = widget.plano.alimentacao != null;
+    final hasFood =
+        widget.plano.alimentacao != null ||
+        widget.plano.refeicoesPrescritas.isNotEmpty;
     final pages = <Widget>[
       HojePage(plano: widget.plano, refresh: () async {}, preview: true),
       SemanaPage(plano: widget.plano, preview: true),
       MeuPlanoPage(plano: widget.plano),
-      if (hasFood) AlimentacaoPage(plano: widget.plano, preview: true),
+      if (hasFood)
+        if (widget.plano.refeicoesPrescritas.isNotEmpty)
+          RotinaPrescritaPage(plano: widget.plano)
+        else
+          AlimentacaoPage(plano: widget.plano, preview: true),
     ];
     final destinations = <NavigationDestination>[
       const NavigationDestination(icon: Icon(Icons.today), label: 'Hoje'),

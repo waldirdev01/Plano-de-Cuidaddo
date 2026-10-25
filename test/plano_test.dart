@@ -30,7 +30,7 @@ void main() {
     });
 
     test('orienta atualização para versão futura sem importar', () {
-      final future = example.replaceFirst('"versao": 2', '"versao": 4');
+      final future = example.replaceFirst('"versao": 2', '"versao": 5');
       expect(
         () => Plano.parse(future),
         throwsA(

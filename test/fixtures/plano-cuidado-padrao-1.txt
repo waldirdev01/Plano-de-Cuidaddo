@@ -1,0 +1,80 @@
+Plano de Cuidado
+PADRAO DO APLICATIVO: PLANO-CUIDADO/1
+
+DADOS DO PLANO
+Paciente: Ana Exemplo Completo
+Nascimento: 01/01/1990
+Consulta: 16/10/2026
+Emissao: 17/10/2026
+Inicio dos registros: 17/10/2026
+Fim dos registros: 30/10/2026
+Retorno: 31/10/2026
+Hora do retorno: 10:00
+Envio semanal: SEXTA
+Hora do envio: 18:00
+Link pessoal: NENHUM
+FIM DADOS DO PLANO
+
+META 1
+Titulo: Alimentação
+Tipo: REFEICOES
+Lembretes: NENHUM
+Orientacao: Seguir as refeições descritas. Aplicar a condição de dispensa do lanche quando couber.
+FIM META
+
+META 2
+Titulo: Hidratação
+Tipo: CONTAGEM
+Quantidade diaria: 4
+Unidade: copos de 500 ml
+Distribuicao: 07:00=1; 10:00=1; 12:00=1; 15:00=1
+Lembretes: 10:00, 12:00
+Orientacao: Exemplo fictício para testar a contagem. Não é prescrição para uso real.
+FIM META
+
+REFEICAO 1
+Nome: Café da manhã
+Horario: 09:30
+Regra: OBRIGATORIA
+Condicao para dispensar: NAO SE APLICA
+Prescricao: Alimentos e quantidades do plano fictício para o café.
+FIM REFEICAO
+
+REFEICAO 2
+Nome: Almoço
+Horario: 12:00
+Regra: OBRIGATORIA
+Condicao para dispensar: NAO SE APLICA
+Prescricao: Alimentos e quantidades do plano fictício para o almoço.
+FIM REFEICAO
+
+REFEICAO 3
+Nome: Lanche da tarde
+Horario: 15:30
+Regra: CONDICIONAL
+Condicao para dispensar: Quando não sentir fome, conforme orientação da profissional.
+Prescricao: Alimentos e quantidades do plano fictício para o lanche.
+FIM REFEICAO
+
+REFEICAO 4
+Nome: Jantar
+Horario: 19:00
+Regra: OBRIGATORIA
+Condicao para dispensar: NAO SE APLICA
+Prescricao: Alimentos e quantidades do plano fictício para o jantar.
+FIM REFEICAO
+
+ORIENTACOES LIVRES
+Exemplo fictício para teste de software
+Este documento não se destina a um paciente real. Valores e horários servem apenas para testar o preenchimento.
+O que vamos cuidar
+Texto de referência escrito pela profissional.
+Exames
+Texto de referência que não cria solicitações.
+Atividade física
+Texto livre que não cria alarmes automaticamente.
+Sinais de alerta
+Orientações da profissional para consulta no documento original.
+Resumo e próximos passos
+Nenhum medicamento, cálculo nutricional ou conduta é criado pelo aplicativo.
+FIM ORIENTACOES LIVRES
