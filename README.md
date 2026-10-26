@@ -37,6 +37,7 @@ Se os Pods precisarem ser instalados, após `flutter pub get` execute `cd ios`, 
 | [Distribuição iOS](docs/distribuicao-ios.md) | Assinatura, Archive e TestFlight |
 | [Resumo para a médica](docs/resumo-teste-medica.md) | Teste a partir do PDF |
 | [Rotina alimentar](docs/rotina-alimentar-v3.md) | Estrutura do JSON alimentar |
+| [Treino](docs/treino.md) | Bloco `treino`, aba do paciente, registros e devolução (não compilado) |
 
 ## Funcionalidades presentes
 

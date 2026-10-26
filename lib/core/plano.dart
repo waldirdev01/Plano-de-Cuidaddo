@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'alimentacao.dart';
+import 'treino.dart';
 
 /// Contract validator and date helpers shared by import, screens and tests.
 class Plano {
@@ -32,6 +33,12 @@ class Plano {
       (data['metas'] as List? ?? const []).cast<Map<String, dynamic>>();
   List<Map<String, dynamic>> get camposDiarios =>
       (data['camposDiarios'] as List? ?? const []).cast<Map<String, dynamic>>();
+  /// Bloco opcional de treino (ver `core/treino.dart`).
+  PrescricaoTreino? get treino {
+    final raw = data['treino'];
+    return raw is Map ? PrescricaoTreino.fromMap(raw) : null;
+  }
+
   AlimentacaoPlano? get alimentacao {
     final raw = data['alimentacao'];
     return raw is Map ? AlimentacaoPlano.fromMap(raw) : null;
@@ -222,6 +229,9 @@ class Plano {
           throw const FormatException('O plano alimentar está inválido.');
         }
         AlimentacaoPlano.fromMap(rawAlimentacao);
+      }
+      if (decoded['treino'] != null) {
+        PrescricaoTreino.validar(decoded['treino']);
       }
       final semanal = decoded['envioSemanal'];
       if (semanal != null &&

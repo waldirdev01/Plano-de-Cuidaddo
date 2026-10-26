@@ -19,6 +19,7 @@ JSON UTF-8 com `formato: "plano-de-cuidado"` e `versao` inteira **1, 2, 3 ou 4**
 | `envioSemanal` | opcional: diaDaSemana 0=domingo até 6=sábado, ate HH:MM |
 | `pdf` | opcional: nome e base64; bytes começam com `%PDF-` |
 | `alimentacao` | opcional; validado pelo modelo alimentar |
+| `treino` | opcional; parâmetros clínicos do treino, ver [treino.md](treino.md) |
 
 `criadoEm` é escrito pelo editor, mas não recebe validação específica. IDs dos campos devem ser únicos entre metas/anotações. Tipos: checklist (`itens` strings), contador (`alvo` >= 0 e `unidade`), sim_nao, texto e escala (`min` <= `max`). Horários de lembretes em HH:MM.
 

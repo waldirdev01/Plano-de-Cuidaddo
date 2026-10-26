@@ -2,6 +2,18 @@
 
 Use macOS, Flutter de referência, Xcode com SDK iOS compatível e conta Apple autorizada para a equipe. O projeto usa Bundle ID `br.com.waldirdev01.planoDeCuidado`; esse ID deve corresponder ao app já cadastrado. Não criar outro registro para cada build.
 
+## Preparação de 26/10/2026 — candidata 1.1.0 (5), com treino
+
+Inclui o treino escrito pela médica (patch `treino-no-app`, ver `treino.md`), compilado e testado aqui pela primeira vez, e o cartão **Treino** na conferência do PDF, para que planos v4 também levem o treino. `pubspec.yaml`: **1.1.0+5**. O build 4 nunca foi confirmado como enviado; usar 5 evita conflito se ele existir no servidor.
+
+- `flutter analyze` sem problemas e **107 testes** aprovados antes do build. Dependências e `pubspec.lock` inalterados.
+- IPA App Store assinado (equipe JNU49FYG9Y), versão 1.1.0, build 5, mínimo iOS 14, SDK iphoneos26.0. Preservado em `output/distribuicao/2026-10-26/Plano-de-Cuidado-1.1.0-5.ipa`. SHA-256: `095fca2c5f9fdc994477cf31abfb77a74d6c8293e2b69a257dc5fbf2dd968ff2`.
+- Após o build, executado `flutter build ios --config-only --release --no-pub`; pacote efêmero em `.iOS("14.0")`.
+- Instalação release no iPhone do responsável feita pela branch. O fluxo completo de treino no aparelho (PDF com treino → paciente → devolução) **não estava confirmado** quando o IPA foi gerado.
+- Regras de séries, repetições e carga são propostas e não foram revisadas clinicamente; a beta é para teste com dados fictícios.
+- **Upload não executado** nesta preparação: depende do login do responsável no App Store Connect.
+- Lição: `flutter install` desinstala o app antes e apaga os dados locais do aparelho. Para atualizar sem perder dados, usar `xcrun devicectl device install app --device <id> build/ios/iphoneos/Runner.app`.
+
 ## Preparação de 17/10/2026 — candidata 1.1.0 (4)
 
 Responsável aceitou no iPhone o fluxo de conferência/exportação de prescrição, importação como Ana, devolução para a profissional e lembrete com som em segundo plano. Código Dart validado com análise sem problemas e 88 testes aprovados na etapa anterior; nesta preparação não houve mudança das regras de negócio nem atualização das dependências. `pubspec.yaml` avançou de 1.1.0+3 para **1.1.0+4**.
@@ -41,7 +53,7 @@ Esse fluxo lê `IPHONEOS_DEPLOYMENT_TARGET=14.0` e ajusta o pacote gerado para `
 
 Após a captura de erro enviada pelo responsável em 17/10/2026: confirmado pacote efêmero em 13.0, projeto/Podfile e IPA preservado em 14.0. A última análise posterior à geração do IPA havia regenerado o manifesto. Executada a sincronização acima e confirmado `.iOS("14.0")`; em seguida `xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner -configuration Release -destination 'generic/platform=iOS' build -quiet` terminou com código **0**, sem aquele erro. Permaneceram avisos não bloqueantes do plugin antigo e da declaração de abertura de documentos. O SHA-256 do IPA preservado continuou igual ao registrado. Não executar Flutter analyze/test depois dessa sincronização sem prepará-la novamente antes do Xcode.
 
-1. Atualize versão/build em `pubspec.yaml`. O estado atual é `1.1.0+4`; uma próxima entrega deve usar número de build ainda não enviado.
+1. Atualize versão/build em `pubspec.yaml`. O estado atual é `1.1.0+5`; uma próxima entrega deve usar número de build ainda não enviado.
 2. Execute análise/testes e compile para simulador quando houver mudanças relevantes.
 3. Abra `ios/Runner.xcworkspace`, alvo Runner, Signing & Capabilities. Ajuste sua equipe/assinatura; certificados e provisioning são locais, não ficam no Git. O Team ID presente no projeto não concede acesso a outro programador.
 4. Compile Archive/IPA:

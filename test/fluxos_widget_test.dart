@@ -11,6 +11,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plano_de_cuidado/core/armazenamento.dart';
 import 'package:plano_de_cuidado/core/edicao_plano.dart';
+import 'package:plano_de_cuidado/core/exportacao_pdf.dart';
 import 'package:plano_de_cuidado/core/plano.dart';
 import 'package:plano_de_cuidado/core/retorno_acompanhamento.dart';
 import 'package:plano_de_cuidado/core/importacao_pdf.dart';
@@ -344,6 +345,52 @@ void main() {
         (edited.data['confirmacoes'] as Map).values.every((v) => v == false),
         true,
       );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'PDF: incluir treino na conferência desfaz confirmações e vai no .plano',
+    (tester) async {
+      final store = ArquivosRascunhoPdf(
+        diretorio: Directory('${dir.path}/pdf-treino'),
+      );
+      await pump(
+        tester,
+        ConferenciaPdfPage(rascunho: rascunhoConferido(), arquivos: store),
+      );
+      await tap(tester, find.text('Não incluído. Toque para incluir.'));
+      await tap(tester, find.text('Incluir treino neste plano'));
+      await tap(tester, find.text('Aplicar na conferência'));
+      expect(find.text('Confirme a triagem de segurança negativa.'), findsOneWidget);
+      await tap(tester, find.textContaining('Triagem de segurança negativa'));
+      await tap(tester, find.text('Aplicar na conferência'));
+      expect(
+        find.text('Incluído: Iniciante · Perda de gordura e de peso'),
+        findsOneWidget,
+      );
+      final exportar = find.widgetWithText(FilledButton, 'Exportar .plano conferido');
+      await tester.ensureVisible(exportar);
+      expect(tester.widget<FilledButton>(exportar).onPressed, isNull);
+      await tap(tester, find.text('Concluir conferência'));
+      expect(find.text('Ainda falta conferir'), findsOneWidget);
+      await tap(tester, find.text('Continuar conferindo'));
+      for (final title in [
+        'Conferi o destinatário, o nome completo e o nascimento.',
+        'Conferi o período, retorno, envio e horários propostos.',
+        'Conferi a fidelidade das metas, refeições e textos e registrei as decisões necessárias.',
+      ]) {
+        await tap(tester, find.text(title));
+      }
+      await tap(tester, find.text('Concluir conferência'));
+      final saved = (await tester.runAsync(store.listar))!.single;
+      expect(saved.estado, 'conferido');
+      final plano = planoDoPdfConferido(
+        saved,
+        profissional: 'Médica Exemplo',
+        registro: 'CRM TESTE',
+      );
+      expect(plano.treino!.nivel, 1);
       expect(tester.takeException(), isNull);
     },
   );

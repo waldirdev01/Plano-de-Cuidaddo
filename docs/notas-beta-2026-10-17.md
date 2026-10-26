@@ -7,6 +7,7 @@
 - Rotina alimentar textual, registro de refeições e hidratação, com lembretes locais.
 - Exportação cumulativa do acompanhamento pelo paciente.
 - Abertura dos acompanhamentos recebidos no modo profissional, com consulta de cada dia sem alterar a prescrição.
+- Build 5: treino opcional. A médica inclui pelo cartão Treino na conferência do PDF (ou no cartão do plano manual); o paciente ganha a aba Treino com programa de 4 semanas, registro de séries e sugestão de carga, e os registros vão na devolução. Regras de treino ainda em revisão clínica.
 
 ## Roteiro curto
 

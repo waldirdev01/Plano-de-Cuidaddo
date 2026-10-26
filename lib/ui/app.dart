@@ -23,6 +23,7 @@ import '../core/importacao_pdf.dart';
 import '../core/exportacao_pdf.dart';
 import '../core/padrao_pdf.dart';
 import '../core/plano.dart';
+import '../core/treino.dart';
 import '../core/retorno_acompanhamento.dart';
 
 part 'profissional.dart';
@@ -30,6 +31,7 @@ part 'paciente.dart';
 part 'alimentacao.dart';
 part 'importacao_pdf.dart';
 part 'retorno_acompanhamento.dart';
+part 'treino.dart';
 
 const fundo = Color(0xFFF6F4EF);
 const verde = Color(0xFF4A5541);
@@ -409,23 +411,56 @@ class _EntradaScreenState extends State<EntradaScreen> {
     final hasFood =
         plano?.alimentacao != null ||
         (plano?.refeicoesPrescritas.isNotEmpty ?? false);
-    final pages = hasFood
-        ? [
-            HojePage(plano: plano, refresh: recarregar),
-            if (plano!.refeicoesPrescritas.isNotEmpty)
-              RotinaPrescritaPage(plano: plano!)
-            else
-              AlimentacaoPage(plano: plano),
-            SemanaPage(plano: plano),
-            MeuPlanoPage(plano: plano),
-            AjustesPage(refresh: recarregar, plano: plano),
-          ]
-        : [
-            HojePage(plano: plano, refresh: recarregar),
-            SemanaPage(plano: plano),
-            MeuPlanoPage(plano: plano),
-            AjustesPage(refresh: recarregar, plano: plano),
-          ];
+    final hasTreino = plano?.data['treino'] != null;
+    final abas = <({Widget pagina, NavigationDestination destino})>[
+      (
+        pagina: HojePage(plano: plano, refresh: recarregar),
+        destino: const NavigationDestination(
+          icon: Icon(Icons.today_outlined),
+          label: 'Hoje',
+        ),
+      ),
+      if (hasFood)
+        (
+          pagina: plano!.refeicoesPrescritas.isNotEmpty
+              ? RotinaPrescritaPage(plano: plano!)
+              : AlimentacaoPage(plano: plano),
+          destino: const NavigationDestination(
+            icon: Icon(Icons.restaurant_menu_outlined),
+            label: 'Alimentação',
+          ),
+        ),
+      if (hasTreino)
+        (
+          pagina: TreinoPage(plano: plano!),
+          destino: const NavigationDestination(
+            icon: Icon(Icons.fitness_center_outlined),
+            label: 'Treino',
+          ),
+        ),
+      (
+        pagina: SemanaPage(plano: plano),
+        destino: const NavigationDestination(
+          icon: Icon(Icons.view_week_outlined),
+          label: 'Semana',
+        ),
+      ),
+      (
+        pagina: MeuPlanoPage(plano: plano),
+        destino: const NavigationDestination(
+          icon: Icon(Icons.menu_book_outlined),
+          label: 'Meu plano',
+        ),
+      ),
+      (
+        pagina: AjustesPage(refresh: recarregar, plano: plano),
+        destino: const NavigationDestination(
+          icon: Icon(Icons.settings_outlined),
+          label: 'Ajustes',
+        ),
+      ),
+    ];
+    final pages = [for (final a in abas) a.pagina];
     final selectedTab = tab >= pages.length ? 0 : tab;
     return Scaffold(
       appBar: AppBar(
@@ -454,47 +489,7 @@ class _EntradaScreenState extends State<EntradaScreen> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: selectedTab,
         onDestinationSelected: (i) => setState(() => tab = i),
-        destinations: hasFood
-            ? const [
-                NavigationDestination(
-                  icon: Icon(Icons.today_outlined),
-                  label: 'Hoje',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.restaurant_menu_outlined),
-                  label: 'Alimentação',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.view_week_outlined),
-                  label: 'Semana',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.menu_book_outlined),
-                  label: 'Meu plano',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.settings_outlined),
-                  label: 'Ajustes',
-                ),
-              ]
-            : const [
-                NavigationDestination(
-                  icon: Icon(Icons.today_outlined),
-                  label: 'Hoje',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.view_week_outlined),
-                  label: 'Semana',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.menu_book_outlined),
-                  label: 'Meu plano',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.settings_outlined),
-                  label: 'Ajustes',
-                ),
-              ],
+        destinations: [for (final a in abas) a.destino],
       ),
     );
   }

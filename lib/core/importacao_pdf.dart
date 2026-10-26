@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'edicao_plano.dart';
 import 'plano.dart';
 import 'padrao_pdf.dart';
+import 'treino.dart';
 
 const canalLeituraPdf = MethodChannel('br.com.waldirdev01.plano_cuidado/pdf');
 
@@ -344,6 +345,7 @@ class ArquivosRascunhoPdf {
         }
       }
     }
+    if (r.data['treino'] != null) PrescricaoTreino.validar(r.data['treino']);
     final checks = r.data['confirmacoes'] as Map;
     if ([
       'identidade',

@@ -4,6 +4,7 @@ import 'edicao_plano.dart';
 import 'importacao_pdf.dart';
 import 'padrao_pdf.dart';
 import 'plano.dart';
+import 'treino.dart';
 
 /// A reviewed draft becomes a patient document only through this conversion.
 /// Stable draft/field IDs are retained on every export and reimport.
@@ -79,6 +80,8 @@ Plano planoDoPdfConferido(
     'linkMonteSeuPrato': c['link'],
     'secoes': copiarDados({'s': r.lista('secoes')})['s'],
     'pdf': copiarDados(r.data['pdf'] as Map<String, dynamic>),
+    if (r.data['treino'] != null)
+      'treino': PrescricaoTreino.fromMap(r.data['treino'] as Map).toMap(),
     'origemPdf': {
       'padrao': PadraoPdf.versao,
       'consulta': c['consulta'],

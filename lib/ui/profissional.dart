@@ -388,6 +388,24 @@ class _ProfissionalPageState extends State<ProfissionalPage> {
                                 label: const Text('Pré-visualizar'),
                               ),
                               TextButton.icon(
+                                onPressed: () async {
+                                  await Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => EditorTreinoPage(plano: p),
+                                    ),
+                                  );
+                                  await _load();
+                                  await widget.refresh();
+                                },
+                                icon: const Icon(Icons.fitness_center_outlined),
+                                label: Text(
+                                  p.data['treino'] == null
+                                      ? 'Treino'
+                                      : 'Treino (incluído)',
+                                ),
+                              ),
+                              TextButton.icon(
                                 onPressed: () => _exportarPlano(context, p),
                                 icon: const Icon(Icons.ios_share),
                                 label: const Text('Exportar'),

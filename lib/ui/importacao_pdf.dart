@@ -132,6 +132,39 @@ class _ConferenciaPdfPageState extends State<ConferenciaPdfPage> {
     });
   }
 
+  String _resumoTreino() {
+    final t = r.data['treino'];
+    if (t is! Map) return 'Não incluído. Toque para incluir.';
+    final p = PrescricaoTreino.fromMap(t);
+    return 'Incluído: ${nomesNivelTreino[p.nivel]} · ${objetivosTreino[p.objetivo]}';
+  }
+
+  Future<void> _editarTreino() async {
+    final atual = r.data['treino'] as Map<String, dynamic>?;
+    final resultado = await Navigator.push<({Map<String, dynamic>? treino})>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EditorTreinoPage.rascunho(
+          nome: (r.campos['nome'] as String).isEmpty
+              ? 'Paciente a conferir'
+              : r.campos['nome'] as String,
+          inicial: atual,
+        ),
+      ),
+    );
+    if (resultado == null ||
+        jsonEncode(resultado.treino) == jsonEncode(atual)) {
+      return;
+    }
+    _alterar(() {
+      if (resultado.treino == null) {
+        r.data.remove('treino');
+      } else {
+        r.data['treino'] = resultado.treino;
+      }
+    });
+  }
+
   Future<void> _exportarConferido({bool previa = false}) async {
     if (dirty || r.estado != 'conferido') return;
     try {
@@ -551,6 +584,18 @@ class _ConferenciaPdfPageState extends State<ConferenciaPdfPage> {
                 ],
                 aberto: true,
               ),
+              if (padronizado) ...[
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.fitness_center_outlined),
+                    title: const Text('Treino'),
+                    subtitle: Text(_resumoTreino()),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: saving ? null : _editarTreino,
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
               for (final entry in {
                 'identidade':
                     'Conferi o destinatário, o nome completo e o nascimento.',

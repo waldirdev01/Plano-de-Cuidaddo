@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'plano.dart';
+import 'treino.dart';
 
 /// A cumulative, patient-reported snapshot, not a prescription or a backup.
 class RetornoAcompanhamento {
@@ -15,6 +16,10 @@ class RetornoAcompanhamento {
   DateTime get exportadoEm => DateTime.parse(data['exportadoEm'] as String);
   Map<String, dynamic> get registros =>
       data['registros'] as Map<String, dynamic>;
+
+  /// Registros de treino por data, quando o plano tem treino.
+  Map<String, dynamic> get registrosTreino =>
+      (data['treino'] as Map<String, dynamic>?) ?? const {};
 
   static RetornoAcompanhamento criar(
     Plano plano,
@@ -47,6 +52,21 @@ class RetornoAcompanhamento {
       };
       if (valores.isNotEmpty) recorte[dia.key] = valores;
     }
+    final treino = <String, dynamic>{};
+    if (plano.data['treino'] != null) {
+      for (final dia in registros.entries) {
+        final d = Plano.parseDia(dia.key);
+        if (d.isBefore(plano.inicio) || d.isAfter(fim)) continue;
+        final valores = <String, dynamic>{
+          for (final campo in dia.value.entries)
+            if (campoDeTreino(campo.key) &&
+                campo.value != null &&
+                registroTreinoValido(campo.key, campo.value))
+              campo.key: campo.value,
+        };
+        if (valores.isNotEmpty) treino[dia.key] = valores;
+      }
+    }
     final random = Random.secure();
     return parse(
       jsonEncode({
@@ -61,6 +81,7 @@ class RetornoAcompanhamento {
         'ate': Plano.formatDia(fim),
         'plano': copia,
         'registros': recorte,
+        if (treino.isNotEmpty) 'treino': treino,
       }),
       agora: now,
     );
@@ -127,6 +148,32 @@ class RetornoAcompanhamento {
             throw const FormatException(
               'O acompanhamento contém um campo ou valor inválido.',
             );
+          }
+        }
+      }
+      final tr = d['treino'];
+      if (tr != null) {
+        if (tr is! Map<String, dynamic> || p.data['treino'] == null) {
+          throw const FormatException(
+            'O acompanhamento contém registros de treino sem treino no plano.',
+          );
+        }
+        for (final dia in tr.entries) {
+          final data = Plano.parseDia(dia.key);
+          if (data.isBefore(de) ||
+              data.isAfter(ate) ||
+              dia.value is! Map<String, dynamic>) {
+            throw const FormatException(
+              'Data de registro de treino fora do acompanhamento.',
+            );
+          }
+          for (final item in (dia.value as Map<String, dynamic>).entries) {
+            if (!campoDeTreino(item.key) ||
+                !registroTreinoValido(item.key, item.value)) {
+              throw const FormatException(
+                'O acompanhamento contém um registro de treino inválido.',
+              );
+            }
           }
         }
       }

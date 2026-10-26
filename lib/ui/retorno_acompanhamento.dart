@@ -367,6 +367,8 @@ class _DetalheRetornoPageState extends State<DetalheRetornoPage> {
           }
           final dia = dias[i - 1];
           final valores = r.registros[Plano.formatDia(dia)] as Map? ?? const {};
+          final treinoDia =
+              r.registrosTreino[Plano.formatDia(dia)] as Map? ?? const {};
           return Card(
             child: ExpansionTile(
               key: ValueKey('retorno-dia-${Plano.formatDia(dia)}'),
@@ -380,6 +382,19 @@ class _DetalheRetornoPageState extends State<DetalheRetornoPage> {
                     title: Text(f['titulo'] as String),
                     subtitle: Text(_textoRegistroRetorno(valores[f['id']], f)),
                   ),
+                if (treinoDia.isNotEmpty) ...[
+                  const ListTile(
+                    title: Text(
+                      'Treino',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  for (final e in treinoDia.entries)
+                    ListTile(
+                      title: Text(_tituloTreinoRetorno(e.key, e.value)),
+                      subtitle: Text(_textoTreinoRetorno(e.key, e.value)),
+                    ),
+                ],
               ],
             ),
           );
@@ -392,4 +407,31 @@ class _DetalheRetornoPageState extends State<DetalheRetornoPage> {
 String _textoRegistroRetorno(dynamic valor, Map<String, dynamic> campo) {
   if (valor == null) return 'Não confirmado';
   return _display(valor, campo);
+}
+
+String _tituloTreinoRetorno(String id, dynamic v) => id == campoAerobicoTreino
+    ? 'Aeróbico'
+    : (v is Map ? v['nome'] as String : id);
+
+String _textoTreinoRetorno(String id, dynamic v) {
+  if (v is! Map) return 'Não confirmado';
+  if (id == campoAerobicoTreino) {
+    final min = v['min'];
+    return v['feito'] == true
+        ? 'Feito${min is num ? ', $min min' : ''}'
+        : 'Não confirmado';
+  }
+  final r = RegistroExercicio.fromMap(v);
+  final series = [
+    for (var i = 0; i < r.series.length; i++)
+      if (r.series[i].feita)
+        '${i + 1}: ${r.series[i].reps ?? '–'} reps'
+            '${r.series[i].kg != null ? ' × ${kgTexto(r.series[i].kg!)} kg' : ''}',
+  ];
+  if (series.isEmpty) return 'Nenhuma série confirmada';
+  return [
+    '${r.feitas} séries feitas',
+    series.join(' · '),
+    if (r.sobraram != null) 'Sobraram ${r.sobraram} repetições na última série',
+  ].join('\n');
 }
