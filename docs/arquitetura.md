@@ -18,6 +18,7 @@
 | `core/exportacao_pdf.dart` | Converte somente o rascunho conferido em plano v4, mantendo IDs e sem calcular nutrientes |
 | `ui/importacao_pdf.dart` | Conferência profissional, decisões, consulta do PDF original e salvamento isolado |
 | `ui/pre_consulta.dart` | Pré-consulta da paciente: etapas, rascunho local e exportação |
+| `ui/pacientes.dart` | Médica: receber pré-consulta/reavaliação, lista de pacientes e ficha com histórico |
 | `ui/app.dart` | Entrada, Hoje, Semana, PDF, compartilhamento e ajustes |
 | `ui/profissional.dart` | Perfil, editor, exportação e prévia |
 | `ui/paciente.dart` | Cadastro e máscara do nascimento |

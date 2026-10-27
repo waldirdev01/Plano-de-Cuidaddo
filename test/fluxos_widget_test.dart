@@ -1722,4 +1722,161 @@ void main() {
       expect(find.text('Revisar e enviar'), findsOneWidget);
     });
   });
+
+  group('pacientes da médica', () {
+    final ana = PerfilPaciente(
+      nome: 'Ana Exemplo Completo',
+      nascimento: '1990-01-01',
+    );
+    File arquivo(String nome, Map<String, dynamic> data) =>
+        File('${dir.path}/$nome')..writeAsStringSync(jsonEncode(data));
+    PreConsulta preConsulta() {
+      final r = PreConsulta.respostasVazias();
+      r['medidas'] = {
+        'peso': 78.5,
+        'altura': 165,
+        'cintura': 92,
+        'quadril': 104,
+      };
+      return PreConsulta.criar(ana, r, termoAceitoEm: DateTime.now());
+    }
+
+    Future<void> receber(WidgetTester tester, File f) async {
+      await tester.runAsync(() async {
+        processarArquivoRecebido!(f);
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+      });
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> esperar(WidgetTester tester) async {
+      for (
+        var i = 0;
+        i < 60 &&
+            (i < 6 ||
+                find.byType(CircularProgressIndicator).evaluate().isNotEmpty);
+        i++
+      ) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 60)),
+        );
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      await tester.pumpAndSettle();
+    }
+
+    setUp(() {
+      final rascunhos = Directory('${dir.path}/rascunhos_pdf');
+      if (rascunhos.existsSync()) rascunhos.deleteSync(recursive: true);
+    });
+
+    testWidgets('anexo tocado no modo profissional entra na ficha', (
+      tester,
+    ) async {
+      await tester.runAsync(() async {
+        final db = Armazenamento.instance;
+        await db.setConfig('papel', 'profissional');
+        await db.setConfig('profissional_nome', 'Médica Exemplo');
+        await db.setConfig('profissional_registro', 'CRM TESTE');
+      });
+      final f = arquivo('pre-consulta-ana.plano', preConsulta().data);
+      await pump(tester, const PlanoCuidadoApp());
+      await receber(tester, f);
+      expect(find.text('Receber pré-consulta?'), findsOneWidget);
+      await tester.tap(find.text('Receber e abrir a ficha'));
+      await esperar(tester);
+      expect(find.text('Ana Exemplo Completo'), findsOneWidget);
+      expect(find.text('Evolução das medidas'), findsOneWidget);
+      expect(find.text('28,8'), findsOneWidget);
+      expect(find.text('0,88'), findsOneWidget);
+      await tap(tester, find.text('Pré-consulta'));
+      await esperar(tester);
+      expect(find.text('Copiar resumo'), findsOneWidget);
+      expect(
+        find.textContaining(
+          'FORMULÁRIO DE PRÉ-CONSULTA — Ana Exemplo Completo',
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.byType(BackButton));
+      await esperar(tester);
+      await tester.tap(find.byType(BackButton));
+      await esperar(tester);
+      await receber(tester, f);
+      await tester.tap(find.text('Receber e abrir a ficha'));
+      await esperar(tester);
+      expect(
+        find.text('Este arquivo já foi recebido. Abrindo a ficha.'),
+        findsOneWidget,
+      );
+      final pacientes = await tester.runAsync(
+        () => Armazenamento.instance.pacientes(),
+      );
+      expect(pacientes, hasLength(1));
+      expect(
+        await tester.runAsync(
+          () => Armazenamento.instance.preConsultasDoPaciente(
+            pacientes!.single.id,
+          ),
+        ),
+        hasLength(1),
+      );
+    });
+
+    testWidgets('no modo paciente o arquivo não é aberto', (tester) async {
+      await tester.runAsync(() async {
+        await Armazenamento.instance.setConfig('papel', 'paciente');
+        await Armazenamento.instance.salvarPerfilPaciente(ana);
+      });
+      final f = arquivo('pre-consulta-ana.plano', preConsulta().data);
+      await pump(tester, const PlanoCuidadoApp());
+      await receber(tester, f);
+      expect(find.text('Receber pré-consulta?'), findsNothing);
+      expect(
+        find.text(
+          'Este arquivo é para a médica, não um plano. Troque para o modo profissional para abri-lo.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        await tester.runAsync(() => Armazenamento.instance.pacientes()),
+        isEmpty,
+      );
+    });
+
+    testWidgets('ficha junta plano do PDF e reavaliação aberta pelo seletor', (
+      tester,
+    ) async {
+      await tester.runAsync(() async {
+        await Armazenamento.instance.setConfig('papel', 'profissional');
+        await ArquivosRascunhoPdf().salvar(rascunhoConferido());
+      });
+      final reavaliacao = Reavaliacao.criar(
+        ana,
+        planoId: 'plano-ana',
+        itens: ['medidas'],
+        respostas: {
+          'medidas': {
+            'peso': 75,
+            'altura': 165,
+            'cintura': null,
+            'quadril': null,
+          },
+        },
+      );
+      picker.file = arquivo('reavaliacao-ana.plano', reavaliacao.data);
+      await pump(tester, const PacientesPage());
+      expect(find.text('Ana Exemplo Completo'), findsOneWidget);
+      expect(find.textContaining('1 registro(s)'), findsOneWidget);
+      await tap(tester, find.text('Abrir pré-consulta ou reavaliação'));
+      await esperar(tester);
+      expect(find.text('Receber reavaliação?'), findsOneWidget);
+      await tester.tap(find.text('Receber e abrir a ficha'));
+      await esperar(tester);
+      expect(find.text('Plano do PDF'), findsOneWidget);
+      expect(find.text('Reavaliação'), findsOneWidget);
+      expect(find.text('27,5'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  });
 }

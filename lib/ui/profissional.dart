@@ -251,6 +251,15 @@ class _ProfissionalPageState extends State<ProfissionalPage> {
                 ),
                 const SizedBox(height: 16),
                 OutlinedButton.icon(
+                  icon: const Icon(Icons.people_outline),
+                  label: const Text('Pacientes'),
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const PacientesPage()),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
                   icon: const Icon(Icons.fact_check_outlined),
                   label: const Text('Acompanhamentos recebidos'),
                   onPressed: () => Navigator.push(
@@ -392,7 +401,8 @@ class _ProfissionalPageState extends State<ProfissionalPage> {
                                   await Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (_) => EditorTreinoPage(plano: p),
+                                      builder: (_) =>
+                                          EditorTreinoPage(plano: p),
                                     ),
                                   );
                                   await _load();

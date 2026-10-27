@@ -217,6 +217,22 @@ class Armazenamento {
     return true;
   });
 
+  Future<PacienteHistorico?> pacienteDe(String nome, String nascimento) async {
+    final rows = await (await db).query(
+      'pacientes',
+      where: 'chave=?',
+      whereArgs: [PacienteHistorico.chave(nome, nascimento)],
+    );
+    if (rows.isEmpty) return null;
+    final r = rows.single;
+    return PacienteHistorico(
+      id: r['id'] as String,
+      nome: r['nome'] as String,
+      nascimento: r['nascimento'] as String,
+      atualizadoEm: DateTime.parse(r['atualizado_em'] as String),
+    );
+  }
+
   /// Most recently updated first.
   Future<List<PacienteHistorico>> pacientes() async {
     final rows = await (await db).query(

@@ -355,9 +355,6 @@ String resumoPreConsulta(PreConsulta p) {
   String data(String iso) => iso.split('-').reversed.join('/');
   String ou(Object? v, String vazio) =>
       v == null || (v is String && v.trim().isEmpty) ? vazio : '$v';
-  String numero(num v) => v == v.roundToDouble()
-      ? v.toInt().toString()
-      : v.toString().replaceAll('.', ',');
   String comDetalhes(List lista, Map detalhes) => lista
       .map((x) {
         final d = (detalhes[x] as String? ?? '').trim();
@@ -406,21 +403,7 @@ String resumoPreConsulta(PreConsulta p) {
   );
 
   secao('MEDIDAS (autorreferidas)');
-  final m = p.medidas;
-  final medidas = [
-    for (final (k, u) in [
-      ('peso', 'kg'),
-      ('altura', 'cm'),
-      ('cintura', 'cm'),
-      ('quadril', 'cm'),
-    ])
-      if (m[k] != null) '$k ${numero(m[k] as num)}$u',
-  ];
-  add(medidas.isEmpty ? 'não preenchidas' : medidas.join(', '));
-  if (p.imc != null) add('IMC: ${numero(p.imc!)}');
-  if (p.relacaoCinturaQuadril != null) {
-    add('Relação cintura-quadril: ${numero(p.relacaoCinturaQuadril!)}');
-  }
+  linhas.addAll(_linhasMedidas(p.medidas));
 
   secao('HÁBITOS');
   final h = r['habitos'] as Map<String, dynamic>;
@@ -437,39 +420,10 @@ String resumoPreConsulta(PreConsulta p) {
   add(habitos.isEmpty ? 'não respondido' : habitos.join(', '));
 
   secao('SONO');
-  final s = r['sono'] as Map<String, dynamic>;
-  final despertar = [
-    if (s['acordaVezes'] != null) '${s['acordaVezes']}x por noite',
-    if ((s['acordaMotivo'] as String).trim().isNotEmpty)
-      'motivo: ${s['acordaMotivo']}',
-  ];
-  final sono = [
-    if (s['horas'] != null) '${numero(s['horas'] as num)}h/noite',
-    if (s['restaurador'] != null)
-      'restaurador: ${(s['restaurador'] as String).toLowerCase()}',
-    if (s['ronco'] != null) 'ronco: ${(s['ronco'] as String).toLowerCase()}',
-    if (s['acordaNoite'] == 'Sim')
-      'acorda à noite: sim${despertar.isEmpty ? '' : ' (${despertar.join('; ')})'}'
-    else if (s['acordaNoite'] == 'Não')
-      'acorda à noite: não',
-    if (s['pausas'] != null)
-      'pausas observadas: ${(s['pausas'] as String).toLowerCase()}',
-  ];
-  add(sono.isEmpty ? 'não respondido' : sono.join(', '));
+  add(_linhaSono(r['sono'] as Map<String, dynamic>));
 
   secao('HUMOR (últimas 2 semanas, respostas)');
-  final e = r['emocional'] as Map<String, dynamic>;
-  final humor = [
-    for (final (chave, itens) in [('phq2', phq2Itens), ('gad2', gad2Itens)])
-      for (var i = 0; i < itens.length; i++)
-        if ((e[chave] as List)[i] != null)
-          '${itens[i]}: ${likert4[(e[chave] as List)[i] as int]}',
-  ];
-  if (humor.isEmpty) {
-    add('não respondido');
-  } else {
-    humor.forEach(add);
-  }
+  linhas.addAll(_linhasHumor(r['emocional'] as Map<String, dynamic>));
 
   if (ident['sexo'] == 'F') {
     secao('SAÚDE HORMONAL');
@@ -485,6 +439,84 @@ String resumoPreConsulta(PreConsulta p) {
     add(hormonal.isEmpty ? 'não respondido' : hormonal.join(', '));
   }
   return linhas.join('\n');
+}
+
+/// Readable summary of a reassessment, same wording as the pre-consultation.
+String resumoReavaliacao(Reavaliacao r) {
+  final linhas = <String>[
+    'REAVALIAÇÃO — ${r.nomePaciente} — ${Plano.formatDia(r.criadoEm).split('-').reversed.join('/')}',
+  ];
+  if (r.medidas != null) {
+    linhas.addAll([
+      '',
+      'MEDIDAS (autorreferidas)',
+      ..._linhasMedidas(r.medidas!),
+    ]);
+  }
+  final sono = r.respostas['sono'] as Map<String, dynamic>?;
+  if (sono != null) linhas.addAll(['', 'SONO', _linhaSono(sono)]);
+  final humor = r.respostas['emocional'] as Map<String, dynamic>?;
+  if (humor != null) {
+    linhas.addAll([
+      '',
+      'HUMOR (últimas 2 semanas, respostas)',
+      ..._linhasHumor(humor),
+    ]);
+  }
+  return linhas.join('\n');
+}
+
+String numeroBr(num v) => v == v.roundToDouble()
+    ? v.toInt().toString()
+    : v.toString().replaceAll('.', ',');
+
+List<String> _linhasMedidas(Map<String, dynamic> m) {
+  final medidas = [
+    for (final (k, u) in [
+      ('peso', 'kg'),
+      ('altura', 'cm'),
+      ('cintura', 'cm'),
+      ('quadril', 'cm'),
+    ])
+      if (m[k] != null) '$k ${numeroBr(m[k] as num)}$u',
+  ];
+  final imc = calcularImc(m), rcq = calcularRcq(m);
+  return [
+    medidas.isEmpty ? 'não preenchidas' : medidas.join(', '),
+    if (imc != null) 'IMC: ${numeroBr(imc)}',
+    if (rcq != null) 'Relação cintura-quadril: ${numeroBr(rcq)}',
+  ];
+}
+
+String _linhaSono(Map<String, dynamic> s) {
+  final despertar = [
+    if (s['acordaVezes'] != null) '${s['acordaVezes']}x por noite',
+    if ((s['acordaMotivo'] as String).trim().isNotEmpty)
+      'motivo: ${s['acordaMotivo']}',
+  ];
+  final sono = [
+    if (s['horas'] != null) '${numeroBr(s['horas'] as num)}h/noite',
+    if (s['restaurador'] != null)
+      'restaurador: ${(s['restaurador'] as String).toLowerCase()}',
+    if (s['ronco'] != null) 'ronco: ${(s['ronco'] as String).toLowerCase()}',
+    if (s['acordaNoite'] == 'Sim')
+      'acorda à noite: sim${despertar.isEmpty ? '' : ' (${despertar.join('; ')})'}'
+    else if (s['acordaNoite'] == 'Não')
+      'acorda à noite: não',
+    if (s['pausas'] != null)
+      'pausas observadas: ${(s['pausas'] as String).toLowerCase()}',
+  ];
+  return sono.isEmpty ? 'não respondido' : sono.join(', ');
+}
+
+List<String> _linhasHumor(Map<String, dynamic> e) {
+  final humor = [
+    for (final (chave, itens) in [('phq2', phq2Itens), ('gad2', gad2Itens)])
+      for (var i = 0; i < itens.length; i++)
+        if ((e[chave] as List)[i] != null)
+          '${itens[i]}: ${likert4[(e[chave] as List)[i] as int]}',
+  ];
+  return humor.isEmpty ? ['não respondido'] : humor;
 }
 
 /// Short form the doctor requests per patient; answers only the chosen items.

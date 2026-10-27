@@ -34,6 +34,7 @@ part 'importacao_pdf.dart';
 part 'retorno_acompanhamento.dart';
 part 'treino.dart';
 part 'pre_consulta.dart';
+part 'pacientes.dart';
 
 const fundo = Color(0xFFF6F4EF);
 const verde = Color(0xFF4A5541);
@@ -156,6 +157,18 @@ class _PlanoCuidadoAppState extends State<PlanoCuidadoApp> {
         final retorno = RetornoAcompanhamento.parse(utf8.decode(raw));
         if (!mounted) return;
         await _receberRetorno(navigatorKey.currentContext!, retorno);
+        return;
+      }
+      if (envelope is Map && envelope['formato'] == PreConsulta.formato) {
+        final p = PreConsulta.parse(utf8.decode(raw));
+        if (!mounted) return;
+        await _receberPreConsulta(navigatorKey.currentContext!, p);
+        return;
+      }
+      if (envelope is Map && envelope['formato'] == Reavaliacao.formato) {
+        final r = Reavaliacao.parse(utf8.decode(raw));
+        if (!mounted) return;
+        await _receberReavaliacao(navigatorKey.currentContext!, r);
         return;
       }
       final plano = Plano.parseBytes(raw);
