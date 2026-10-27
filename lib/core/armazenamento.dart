@@ -4,8 +4,28 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
+import 'importacao_pdf.dart';
 import 'plano.dart';
+import 'pre_consulta.dart';
 import 'retorno_acompanhamento.dart';
+
+/// A person in the professional's local history, keyed by name + birth date.
+class PacienteHistorico {
+  const PacienteHistorico({
+    required this.id,
+    required this.nome,
+    required this.nascimento,
+    required this.atualizadoEm,
+  });
+  final String id;
+  final String nome;
+  final String nascimento;
+  final DateTime atualizadoEm;
+
+  /// Same identity rule the app uses to check a file's recipient.
+  static String chave(String nome, String nascimento) =>
+      '${PerfilPaciente.normalizarNome(nome)}|$nascimento';
+}
 
 class AcompanhamentoGuardado {
   const AcompanhamentoGuardado(this.plano, this.estado);
@@ -16,8 +36,12 @@ class AcompanhamentoGuardado {
 /// Persistência local: seleção em config, estado em planos e registros por ID.
 /// Alterações de esquema exigem migração; veja docs/arquitetura.md.
 class Armazenamento {
-  Armazenamento._();
-  Armazenamento.testing(this._db);
+  Armazenamento._() : rascunhosPdf = ArquivosRascunhoPdf();
+  Armazenamento.testing(this._db, {this.rascunhosPdf});
+
+  /// PDF drafts live in files, not SQLite; the backup carries them too.
+  /// Null in tests that do not exercise drafts.
+  final ArquivosRascunhoPdf? rascunhosPdf;
   static final Armazenamento instance = Armazenamento._();
   Database? _db;
 
@@ -26,7 +50,7 @@ class Armazenamento {
     final dir = await getApplicationSupportDirectory();
     _db = await openDatabase(
       '${dir.path}/plano_de_cuidado.db',
-      version: 2,
+      version: 3,
       onCreate: (db, _) => criarEsquema(db),
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -34,6 +58,7 @@ class Armazenamento {
             "ALTER TABLE planos ADD COLUMN estado TEXT NOT NULL DEFAULT 'em_andamento'",
           );
         }
+        if (oldVersion < 3) await criarHistorico(db);
       },
     );
     return _db!;
@@ -52,6 +77,19 @@ class Armazenamento {
     await db.execute(
       'CREATE TABLE config(chave TEXT PRIMARY KEY, valor TEXT NOT NULL)',
     );
+    await criarHistorico(db);
+  }
+
+  /// Version 3, additive: the professional's patient history.
+  static Future<void> criarHistorico(DatabaseExecutor db) async {
+    await db.execute(
+      'CREATE TABLE pacientes(id TEXT PRIMARY KEY, chave TEXT NOT NULL UNIQUE, nome TEXT NOT NULL, nascimento TEXT NOT NULL, criado_em TEXT NOT NULL, atualizado_em TEXT NOT NULL)',
+    );
+    for (final tabela in ['pre_consultas', 'reavaliacoes']) {
+      await db.execute(
+        'CREATE TABLE $tabela(id TEXT PRIMARY KEY, paciente_id TEXT NOT NULL, recebida_em TEXT NOT NULL, json TEXT NOT NULL)',
+      );
+    }
   }
 
   Future<String?> config(String key) async =>
@@ -97,6 +135,123 @@ class Armazenamento {
       return true;
     });
   }
+
+  /// Files a received pre-consultation under its patient, creating the entry.
+  /// Returns false when the same file was already received.
+  Future<bool> guardarPreConsulta(PreConsulta p, {DateTime? agora}) async {
+    final validado = PreConsulta.parse(jsonEncode(p.data), agora: agora);
+    return _guardarNoHistorico(
+      'pre_consultas',
+      validado.id,
+      validado.nomePaciente,
+      validado.nascimentoPaciente,
+      jsonEncode(validado.data),
+      agora ?? DateTime.now(),
+    );
+  }
+
+  Future<bool> guardarReavaliacao(Reavaliacao r, {DateTime? agora}) async {
+    final validado = Reavaliacao.parse(jsonEncode(r.data), agora: agora);
+    return _guardarNoHistorico(
+      'reavaliacoes',
+      validado.id,
+      validado.nomePaciente,
+      validado.nascimentoPaciente,
+      jsonEncode(validado.data),
+      agora ?? DateTime.now(),
+    );
+  }
+
+  Future<bool> _guardarNoHistorico(
+    String tabela,
+    String id,
+    String nome,
+    String nascimento,
+    String json,
+    DateTime agora,
+  ) async => (await db).transaction((txn) async {
+    final existente = await txn.query(tabela, where: 'id=?', whereArgs: [id]);
+    if (existente.isNotEmpty) {
+      if (existente.single['json'] != json) {
+        throw const FormatException(
+          'Já existe outro conteúdo com o mesmo identificador. Nada foi substituído.',
+        );
+      }
+      return false;
+    }
+    final quando = agora.toIso8601String();
+    final chave = PacienteHistorico.chave(nome, nascimento);
+    final paciente = await txn.query(
+      'pacientes',
+      where: 'chave=?',
+      whereArgs: [chave],
+    );
+    final String pacienteId;
+    if (paciente.isEmpty) {
+      pacienteId = novoIdEnvelope();
+      await txn.insert('pacientes', {
+        'id': pacienteId,
+        'chave': chave,
+        'nome': nome.trim(),
+        'nascimento': nascimento,
+        'criado_em': quando,
+        'atualizado_em': quando,
+      });
+    } else {
+      pacienteId = paciente.single['id'] as String;
+      await txn.update(
+        'pacientes',
+        {'nome': nome.trim(), 'atualizado_em': quando},
+        where: 'id=?',
+        whereArgs: [pacienteId],
+      );
+    }
+    await txn.insert(tabela, {
+      'id': id,
+      'paciente_id': pacienteId,
+      'recebida_em': quando,
+      'json': json,
+    });
+    return true;
+  });
+
+  /// Most recently updated first.
+  Future<List<PacienteHistorico>> pacientes() async {
+    final rows = await (await db).query(
+      'pacientes',
+      orderBy: 'atualizado_em DESC',
+    );
+    return [
+      for (final r in rows)
+        PacienteHistorico(
+          id: r['id'] as String,
+          nome: r['nome'] as String,
+          nascimento: r['nascimento'] as String,
+          atualizadoEm: DateTime.parse(r['atualizado_em'] as String),
+        ),
+    ];
+  }
+
+  /// Newest first.
+  Future<List<PreConsulta>> preConsultasDoPaciente(String pacienteId) async => [
+    for (final r in await (await db).query(
+      'pre_consultas',
+      where: 'paciente_id=?',
+      whereArgs: [pacienteId],
+      orderBy: 'recebida_em DESC',
+    ))
+      PreConsulta.parse(r['json'] as String),
+  ];
+
+  Future<List<Reavaliacao>> reavaliacoesDoPaciente(String pacienteId) async => [
+    for (final r in await (await db).query(
+      'reavaliacoes',
+      where: 'paciente_id=?',
+      whereArgs: [pacienteId],
+      orderBy: 'recebida_em DESC',
+    ))
+      Reavaliacao.parse(r['json'] as String),
+  ];
 
   Future<List<RetornoAcompanhamento>> retornosRecebidos() async {
     final nome = await config('profissional_nome') ?? '';
@@ -516,7 +671,25 @@ class Armazenamento {
       'versao': 1,
       'planos': entries,
       'config': settings,
+      // Optional keys: older apps ignore them, older backups lack them.
+      'pacientes': await d.query('pacientes'),
+      'preConsultas': await d.query('pre_consultas'),
+      'reavaliacoes': await d.query('reavaliacoes'),
+      if (rascunhosPdf != null)
+        'rascunhosPdf': await rascunhosPdf!.paraBackup(),
     });
+  }
+
+  static (String, String, String) _identidadeNoHistorico(
+    String tabela,
+    String json,
+  ) {
+    if (tabela == 'pre_consultas') {
+      final p = PreConsulta.parse(json);
+      return (p.id, p.nomePaciente, p.nascimentoPaciente);
+    }
+    final r = Reavaliacao.parse(json);
+    return (r.id, r.nomePaciente, r.nascimentoPaciente);
   }
 
   Future<File> backup() async {
@@ -560,12 +733,23 @@ class Armazenamento {
         );
       }
     }
+    // Check the drafts before touching the database, so a damaged one
+    // leaves everything as it was.
+    final rascunhos = value['rascunhosPdf'] as List?;
+    if (rascunhos != null) {
+      for (final r in rascunhos) {
+        ArquivosRascunhoPdf.validarParaRestaurar(r);
+      }
+    }
     final d = await db;
     await d.transaction((txn) async {
       await txn.delete('planos');
       await txn.delete('registros');
       await txn.delete('envios');
       await txn.delete('config');
+      for (final tabela in ['pacientes', 'pre_consultas', 'reavaliacoes']) {
+        await txn.delete(tabela);
+      }
       for (final raw in value['planos']) {
         final p = raw as Map;
         final plano = Plano.parse(jsonEncode(jsonDecode(p['json'] as String)));
@@ -597,7 +781,61 @@ class Armazenamento {
       for (final row in value['config'] as List) {
         await txn.insert('config', Map<String, Object?>.from(row as Map));
       }
+      final pacientes = {
+        for (final row in value['pacientes'] as List? ?? const [])
+          (row as Map)['id'] as String: row,
+      };
+      for (final row in pacientes.values) {
+        final nome = row['nome'] as String,
+            nascimento = row['nascimento'] as String;
+        PerfilPaciente(nome: nome, nascimento: nascimento);
+        await txn.insert('pacientes', {
+          'id': row['id'],
+          'chave': PacienteHistorico.chave(nome, nascimento),
+          'nome': nome,
+          'nascimento': nascimento,
+          'criado_em': DateTime.parse(
+            row['criado_em'] as String,
+          ).toIso8601String(),
+          'atualizado_em': DateTime.parse(
+            row['atualizado_em'] as String,
+          ).toIso8601String(),
+        });
+      }
+      for (final (chave, tabela) in [
+        ('preConsultas', 'pre_consultas'),
+        ('reavaliacoes', 'reavaliacoes'),
+      ]) {
+        for (final raw in value[chave] as List? ?? const []) {
+          final row = raw as Map;
+          final paciente = pacientes[row['paciente_id']];
+          final json = row['json'] as String;
+          final (id, nome, nascimento) = _identidadeNoHistorico(tabela, json);
+          if (paciente == null ||
+              id != row['id'] ||
+              PacienteHistorico.chave(nome, nascimento) !=
+                  PacienteHistorico.chave(
+                    paciente['nome'] as String,
+                    paciente['nascimento'] as String,
+                  )) {
+            throw const FormatException(
+              'O histórico de pacientes da cópia está inconsistente. Nada foi restaurado.',
+            );
+          }
+          await txn.insert(tabela, {
+            'id': id,
+            'paciente_id': row['paciente_id'],
+            'recebida_em': DateTime.parse(
+              row['recebida_em'] as String,
+            ).toIso8601String(),
+            'json': json,
+          });
+        }
+      }
     });
+    if (rascunhos != null && rascunhosPdf != null) {
+      await rascunhosPdf!.restaurar(rascunhos.cast<Map<String, dynamic>>());
+    }
   }
 }
 

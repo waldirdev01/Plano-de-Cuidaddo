@@ -59,8 +59,18 @@ Metas `kcal`, `proteina`, `carboidrato`, `gordura`, `fibra`: números finitos n�
 
 Veja `rotina-alimentar-v3.md` e `exemplos/plano-alimentar-teste-v3.plano`. A validação de rotina diária e tipos opcionais ainda precisa ser endurecida (ver continuidade).
 
+## Pré-consulta e reavaliação
+
+Envelopes enviados pela paciente à profissional, `.plano`, **não são prescrição** (`core/pre_consulta.dart`). Todos têm `id` aleatório de 32 hexadecimais, `criadoEm` ISO (até 1 dia no futuro, tolerância de relógio) e `paciente` `{nome, nascimento}` com nome completo. Parser estrito: chaves fora do contrato, opções fora das listas, escalas fora da faixa e tipos errados são recusados.
+
+- **Pré-consulta** — `formato: plano-de-cuidado-pre-consulta`, `versao: 1`, até 1 MB, sem fotos. `termo` `{versao, aceitoEm}`; versão aceita: `20/09/2026, rev. 2`; aceite não pode ser posterior a `criadoEm`. `respostas`: `ident` (CPF `000.000.000-00` ou vazio, sexo `F`/`M`/null, e-mail, nome da mãe, CEP `00000-000` ou vazio, endereço), `saude` (condições e história familiar das listas fixas, detalhes só de itens marcados; SOP só com sexo F), `medidas`, `alimentacao.emocional` (0–10), `sono`, `emocional`, `habitos` (álcool AUDIT-C item 1, índice 0–4; cigarro; apoio 0–10), `hormonal` (só preenchida com sexo F).
+- **Reavaliação** — `formato: plano-de-cuidado-reavaliacao`, `versao: 1`, até 256 KB. `planoId`, `itens` (subconjunto não vazio e sem repetição de `medidas`, `sono`, `humor`) e `respostas` exatamente com as seções pedidas (`humor` → `emocional`).
+- Seções comuns: `medidas` `{peso 20–400 kg, altura 80–250 cm, cintura 30–300 cm, quadril 30–300 cm}`, cada uma número ou null. `sono` `{horas 0–24, restaurador, acordaNoite, acordaVezes 0–50, acordaMotivo, ronco, pausas}`; vezes e motivo só com `acordaNoite: "Sim"`. `emocional` `{phq2: [2], gad2: [2]}`, cada item 0–3 ou null.
+
+IMC (1 casa) e relação cintura-quadril (2 casas) são calculados na leitura, **só como número, sem classificação**. PHQ-2 e GAD-2 ficam como respostas, sem soma. O pedido de reavaliação dentro do `.plano` (`reavaliacao: {itens, datas}`) ainda não faz parte do contrato.
+
 ## Backup
 
-`.plano-backup` é JSON com `formato: "plano-de-cuidado-backup"`, `versao: 1`, planos/registros/envios e config. Não confundir versão do backup com versão SQLite ou `.plano`. Restauração substitui o banco em transação e rejeita cadastro de outro paciente quando já há cadastro local.
+`.plano-backup` é JSON com `formato: "plano-de-cuidado-backup"`, `versao: 1`, planos/registros/envios e config. Chaves opcionais `pacientes`, `preConsultas` e `reavaliacoes` trazem o histórico da profissional; cópias antigas sem elas restauram com histórico vazio. A chave opcional `rascunhosPdf` traz os rascunhos de PDF (inclusive conferidos, de onde sai o `.plano` v4); restaurar grava os da cópia e mantém os do aparelho. Cópia sem a chave não mexe nos rascunhos. Um rascunho danificado impede toda a restauração. Cada pré-consulta/reavaliação é revalidada e precisa corresponder ao paciente da cópia, senão nada é restaurado. Não confundir versão do backup com versão SQLite ou `.plano`. Restauração substitui o banco em transação e rejeita cadastro de outro paciente quando já há cadastro local.
 
 Arquivos são legíveis e não criptografados. O anexo base64 não é proteção. Compatibilidade, migração e destinatário devem ser verificados antes de alterar o contrato.

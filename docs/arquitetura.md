@@ -9,6 +9,7 @@
 | `core/plano.dart` | Validação do arquivo, cadastro/conferência e datas |
 | `core/edicao_plano.dart` | Criar/duplicar, IDs, modelos de campos |
 | `core/armazenamento.dart` | SQLite, seleção, planos, registros, config e backup |
+| `core/pre_consulta.dart` | Envelopes de pré-consulta e reavaliação, listas fixas, IMC e relação cintura-quadril |
 | `core/alimentacao.dart` | Opções, porções, rotina e soma de nutrientes |
 | `core/lembretes.dart` | Agendamento local e limite de avisos |
 | `core/native_bridge.dart` | EventChannel iOS de arquivos recebidos |
@@ -50,7 +51,7 @@ O botão profissional **Importar PDF do plano** usa `PlatformFile.readAsBytes()`
 
 O parser Dart exige PLANO-CUIDADO/1 e lê somente seus blocos e campos explícitos (ver `padrao-pdf-v1.md`). Valida quantidade/distribuição, horários, datas e regras condicionais sem inferir conteúdo de frases. Textos livres são referência, não tarefas. O leitor preserva também URLs das anotações, mas o link importado deve estar escrito completo no campo próprio. A conferência preserva a íntegra e os bytes do documento e exige três confirmações. Alterar campos invalida a conferência anterior. Rascunhos antigos abrem sem migração; novas importações do formato antigo são recusadas.
 
-Arquivos em Application Support/`rascunhos_pdf/<uuid>.json`, formato `rascunho-importacao-pdf` v1, gravados por arquivo temporário e rename. **Não são `.plano`** e não entram diretamente em SQLite ou notificações. O backup existente **não inclui esses rascunhos**. Somente a conversão explícita após conferência gera o arquivo paciente v4; só a importação confirmada pelo paciente grava esse plano no banco. Ambos contêm dados de saúde legíveis, sem criptografia nova. Ver `teste-exportacao-pdf-fase2.md`.
+Arquivos em Application Support/`rascunhos_pdf/<uuid>.json`, formato `rascunho-importacao-pdf` v1, gravados por arquivo temporário e rename. **Não são `.plano`** e não entram diretamente em SQLite ou notificações. Desde 27/10/2026 o backup **inclui os rascunhos** (chave `rascunhosPdf`): todos são validados antes de tocar no banco e, ao restaurar, os da cópia são gravados com o horário original, sem apagar rascunhos do aparelho ausentes na cópia (o app não exclui rascunhos). Somente a conversão explícita após conferência gera o arquivo paciente v4; só a importação confirmada pelo paciente grava esse plano no banco. Ambos contêm dados de saúde legíveis, sem criptografia nova. Ver `teste-exportacao-pdf-fase2.md`.
 
 V4 mantém `fim` independente de `retorno`, metas `refeicoes` como apresentação sem registro duplicado e `refeicoesPrescritas` com IDs e regras. `Plano.camposRegistraveis` combina metas registráveis, anotações e refeições para Semana/compartilhamento. Hoje registra refeições por ID com `feito`, `nao_feito`, `dispensado` ou ausência, nunca confunde ausência com comprovação de não execução. A aba Alimentação textual não usa o modelo nutricional v3. Os consumidores de calendário e lembretes usam `Plano.fim` (fallback retorno para formatos anteriores). O aviso de retorno continua vinculado à data real da consulta.
 
@@ -79,5 +80,7 @@ Aceitação de outras versões (1–3), consolidação automática entre arquivo
 - `fase2_test.dart`: persistência, editor e backup.
 - `alimentacao_test.dart`: totais, rotina, separação e exemplo v3.
 - `fluxos_widget_test.dart`: telas com mocks de serviços nativos e fontes reais.
+
+SQLite versão 3 (aditiva): `pacientes` (chave nome normalizado + nascimento), `pre_consultas` e `reavaliacoes`, histórico da profissional. Bancos da versão 2 recebem as tabelas no `onUpgrade` sem alterar as existentes.
 
 Os testes usam SQLite isolado e fixtures fictícios versionados; serviços nativos precisam de aceitação manual.

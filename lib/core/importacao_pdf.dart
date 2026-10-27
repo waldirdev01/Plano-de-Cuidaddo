@@ -276,6 +276,41 @@ class ArquivosRascunhoPdf {
     return drafts;
   }
 
+  /// Raw drafts for the backup, in the same shape as the files.
+  Future<List<Map<String, dynamic>>> paraBackup() async => [
+    for (final r in await listar()) r.data,
+  ];
+
+  /// Validates every draft first, then writes them keeping their timestamps.
+  /// Drafts already on the device and absent from the backup are kept.
+  Future<void> restaurar(List<Map<String, dynamic>> drafts) async {
+    final validos = [for (final d in drafts) validarParaRestaurar(d)];
+    final dir = await _dir();
+    for (final r in validos) {
+      final path = '${dir.path}/${r.id}.json';
+      final temp = File('$path.tmp');
+      await temp.writeAsString(jsonEncode(r.data), flush: true);
+      await temp.rename(path);
+    }
+  }
+
+  static RascunhoPdf validarParaRestaurar(Object? d) {
+    try {
+      if (d is! Map<String, dynamic> ||
+          d['formato'] != 'rascunho-importacao-pdf' ||
+          d['versao'] != 1) {
+        throw const FormatException('Rascunho danificado.');
+      }
+      final r = RascunhoPdf(d);
+      _conferirEstrutura(r);
+      return r;
+    } catch (_) {
+      throw const FormatException(
+        'Um rascunho de PDF da cópia está danificado. Nada foi restaurado.',
+      );
+    }
+  }
+
   // Validate partial drafts structurally, not clinically. A damaged file must
   // not make the professional home page crash or imply clinical approval.
   static void _conferirEstrutura(RascunhoPdf r) {
