@@ -1,6 +1,6 @@
 # Pré-consulta no app e histórico de pacientes — plano
 
-Estado: **etapa 1 implementada (27/10/2026)**: envelopes, banco local e backup, com testes; sem telas. Decisões da médica registradas em 27/10/2026. Origem: formulário web de pré-consulta da médica (artifact "Pré-Consulta — Consultório Priscila Carvalho", termo versão 20/09/2026 rev. 2).
+Estado: **etapas 1 e 2 implementadas (27/10/2026)**: envelopes, banco local, backup e telas da paciente, com testes. Falta a médica receber (etapa 3). Decisões da médica registradas em 27/10/2026. Origem: formulário web de pré-consulta da médica (artifact "Pré-Consulta — Consultório Priscila Carvalho", termo versão 20/09/2026 rev. 2).
 
 ## Decisões do responsável
 
@@ -80,7 +80,7 @@ A ficha da paciente reúne, em ordem de data: pré-consultas, reavaliações, pl
 ## Etapas de implementação
 
 1. **Núcleo (feito):** `core/pre_consulta.dart`, tabelas `pacientes`/`pre_consultas`/`reavaliacoes` (SQLite v3), backup e `test/pre_consulta_test.dart`. Campos no contrato: `contrato-plano.md`. Rascunhos de PDF passaram a entrar no backup (27/10/2026), então a ficha não perde os planos vindos de PDF.
-2. **Paciente:** telas das etapas, rascunho, revisão, exportação com declaração de envio. Testes de widget, fonte ampliada.
+2. **Paciente (feito):** `ui/pre_consulta.dart`. Entrada pelo botão "Fazer a pré-consulta" na tela sem plano e por Ajustes > Pré-consulta. Mesmas etapas do web (saúde hormonal só aparece com sexo feminino; trocar para masculino limpa SOP e hormonal). Rascunho em config `pre_consulta_rascunho` (entra no backup), com "Continuar de onde parei" / "Começar do zero"; mudança de versão do termo exige novo aceite. Medidas fora da faixa ficam destacadas e bloqueiam Continuar. Exporta `pre-consulta-<nome>-<data>.plano` de dois jeitos: **e-mail para o consultório** (compositor nativo do iOS pelo canal `br.com.waldirdev01.plano_cuidado/email`, destinatário `prikroc@gmail.com` do termo, **resumo legível no corpo** (`resumoPreConsulta`, texto do formulário web, com IMC e relação cintura-quadril só como número) e o `.plano` anexado para o app; aparece só com conta configurada no app Mail; o próprio iOS informa o envio e o app grava `pre_consulta_enviada_em`) ou **compartilhar** (WhatsApp e outros; o WhatsApp não permite escolher o contato para arquivo, só para texto; aqui o envio é declarado pela paciente). Botão para apagar as respostas do aparelho. Vídeo de medidas como link copiável (o app não abre navegador).
 3. **Médica:** receber arquivo, tela Pacientes, ficha com histórico, IMC e relação cintura-quadril. Testes de widget.
 4. **Depois:** campo `reavaliacao` no plano e lembretes locais, criar plano a partir da ficha (pré-preenche identidade), lembrete de backup.
 

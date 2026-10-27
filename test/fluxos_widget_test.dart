@@ -13,6 +13,7 @@ import 'package:plano_de_cuidado/core/armazenamento.dart';
 import 'package:plano_de_cuidado/core/edicao_plano.dart';
 import 'package:plano_de_cuidado/core/exportacao_pdf.dart';
 import 'package:plano_de_cuidado/core/plano.dart';
+import 'package:plano_de_cuidado/core/pre_consulta.dart';
 import 'package:plano_de_cuidado/core/retorno_acompanhamento.dart';
 import 'package:plano_de_cuidado/core/importacao_pdf.dart';
 import 'package:plano_de_cuidado/ui/app.dart';
@@ -109,7 +110,15 @@ void main() {
   });
   setUp(() async {
     final db = await Armazenamento.instance.db;
-    for (final table in ['planos', 'registros', 'envios', 'config']) {
+    for (final table in [
+      'planos',
+      'registros',
+      'envios',
+      'config',
+      'pacientes',
+      'pre_consultas',
+      'reavaliacoes',
+    ]) {
       await db.delete(table);
     }
     picker = _Picker();
@@ -362,14 +371,20 @@ void main() {
       await tap(tester, find.text('Não incluído. Toque para incluir.'));
       await tap(tester, find.text('Incluir treino neste plano'));
       await tap(tester, find.text('Aplicar na conferência'));
-      expect(find.text('Confirme a triagem de segurança negativa.'), findsOneWidget);
+      expect(
+        find.text('Confirme a triagem de segurança negativa.'),
+        findsOneWidget,
+      );
       await tap(tester, find.textContaining('Triagem de segurança negativa'));
       await tap(tester, find.text('Aplicar na conferência'));
       expect(
         find.text('Incluído: Iniciante · Perda de gordura e de peso'),
         findsOneWidget,
       );
-      final exportar = find.widgetWithText(FilledButton, 'Exportar .plano conferido');
+      final exportar = find.widgetWithText(
+        FilledButton,
+        'Exportar .plano conferido',
+      );
       await tester.ensureVisible(exportar);
       expect(tester.widget<FilledButton>(exportar).onPressed, isNull);
       await tap(tester, find.text('Concluir conferência'));
@@ -1449,4 +1464,262 @@ void main() {
       }
     },
   );
+
+  group('pré-consulta da paciente', () {
+    final ana = PerfilPaciente(
+      nome: 'Ana Exemplo Completo',
+      nascimento: '1990-01-01',
+    );
+    Future<void> escrever(
+      WidgetTester tester,
+      String rotulo,
+      String texto,
+    ) async {
+      final campo = label(rotulo);
+      if (campo.evaluate().isEmpty) {
+        await tester.scrollUntilVisible(
+          campo,
+          300,
+          scrollable: find.byType(Scrollable).first,
+        );
+      }
+      await tester.ensureVisible(campo);
+      await tester.enterText(campo, texto);
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 60)),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> continuar(WidgetTester tester) =>
+        tap(tester, find.widgetWithText(FilledButton, 'Continuar'));
+
+    testWidgets('preenche todas as etapas e exporta um arquivo válido', (
+      tester,
+    ) async {
+      await tester.runAsync(
+        () => Armazenamento.instance.salvarPerfilPaciente(ana),
+      );
+      await pump(tester, const PreConsultaPage());
+      expect(find.text('1 / 7'), findsOneWidget);
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.widgetWithText(FilledButton, 'Continuar'),
+            )
+            .onPressed,
+        isNull,
+      );
+      await tap(
+        tester,
+        find.text('Li e concordo com o termo de consentimento.'),
+      );
+      await continuar(tester);
+      expect(find.text('Ana Exemplo Completo'), findsOneWidget);
+      await escrever(tester, 'CPF', '12345678900');
+      expect(find.text('123.456.789-00'), findsOneWidget);
+      await tap(tester, find.text('Feminino'));
+      await escrever(tester, 'CEP', '70000000');
+      await continuar(tester);
+      await tap(tester, find.text('Problema nos rins'));
+      await escrever(tester, 'Problema nos rins — detalhes', 'cálculo, 2019');
+      await tap(tester, find.text(comorbidadeSop));
+      await continuar(tester);
+      await escrever(tester, 'Peso (kg)', '7850');
+      expect(find.text('Use um número de 20 a 400.'), findsOneWidget);
+      await continuar(tester);
+      expect(find.text('Suas medidas'), findsOneWidget);
+      await escrever(tester, 'Peso (kg)', '78,5');
+      await escrever(tester, 'Altura (cm)', '165');
+      await continuar(tester);
+      await tap(tester, find.text('2–3x/semana'));
+      await continuar(tester);
+      await tap(tester, find.text('Vários dias').first);
+      await continuar(tester);
+      expect(find.text('Saúde hormonal'), findsOneWidget);
+      await tap(tester, find.text('Regular'));
+      await continuar(tester);
+      expect(find.text('8 / 8'), findsOneWidget);
+      expect(find.text('Enviar por e-mail para a médica'), findsNothing);
+      await tap(tester, find.text('Compartilhar arquivo (WhatsApp e outros)'));
+      expect(shared.single, endsWith('.plano'));
+      expect(shared.single, contains('pre-consulta-ana-exemplo-completo-'));
+      final p = PreConsulta.parse(File(shared.single).readAsStringSync());
+      expect(p.nomePaciente, 'Ana Exemplo Completo');
+      expect(p.respostas['ident']['cpf'], '123.456.789-00');
+      expect(p.respostas['ident']['cep'], '70000-000');
+      expect(p.respostas['saude']['detalhes'], {
+        'Problema nos rins': 'cálculo, 2019',
+      });
+      expect(p.medidas['peso'], 78.5);
+      expect(p.imc, 28.8);
+      expect(p.respostas['habitos']['alcool'], 3);
+      expect(p.respostas['emocional']['phq2'], [1, null]);
+      expect(p.respostas['hormonal']['ciclo'], 'Regular');
+      await tap(tester, find.text('Já enviei à médica'));
+      expect(
+        await tester.runAsync(
+          () => Armazenamento.instance.config('pre_consulta_enviada_em'),
+        ),
+        isNotNull,
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets(
+      'retoma o rascunho; trocar para masculino limpa SOP e hormonal',
+      (tester) async {
+        await tester.runAsync(
+          () => Armazenamento.instance.salvarPerfilPaciente(ana),
+        );
+        await pump(tester, const PreConsultaPage());
+        await tap(
+          tester,
+          find.text('Li e concordo com o termo de consentimento.'),
+        );
+        await continuar(tester);
+        await tap(tester, find.text('Feminino'));
+        await continuar(tester);
+        await tap(tester, find.text(comorbidadeSop));
+        await pump(tester, const PreConsultaPage(key: ValueKey('reaberta')));
+        expect(find.text('Antes de começar'), findsOneWidget);
+        await tap(tester, find.text('Continuar de onde parei'));
+        expect(find.text('Sua saúde até hoje'), findsWidgets);
+        final sop = find.widgetWithText(CheckboxListTile, comorbidadeSop);
+        await tester.ensureVisible(sop);
+        expect(tester.widget<CheckboxListTile>(sop).value, isTrue);
+        await tap(tester, find.widgetWithText(OutlinedButton, 'Voltar'));
+        await tap(tester, find.text('Masculino'));
+        expect(find.text('2 / 7'), findsOneWidget);
+        await continuar(tester);
+        expect(find.text(comorbidadeSop), findsNothing);
+        final raw = await tester.runAsync(
+          () => Armazenamento.instance.config('pre_consulta_rascunho'),
+        );
+        final r = (jsonDecode(raw!) as Map)['respostas'] as Map;
+        expect(r['saude']['comorbidades'], isEmpty);
+        await pump(tester, const PreConsultaPage(key: ValueKey('zero')));
+        await tap(tester, find.text('Começar do zero'));
+        expect(
+          await tester.runAsync(
+            () => Armazenamento.instance.config('pre_consulta_rascunho'),
+          ),
+          isNull,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'e-mail vai para o consultório com o arquivo e registra envio',
+      (tester) async {
+        final messenger =
+            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+        const canal = MethodChannel('br.com.waldirdev01.plano_cuidado/email');
+        Map<Object?, Object?>? pedido;
+        var status = 'cancelado';
+        messenger.setMockMethodCallHandler(canal, (call) async {
+          if (call.method == 'disponivel') return true;
+          pedido = call.arguments as Map<Object?, Object?>;
+          return status;
+        });
+        addTearDown(() => messenger.setMockMethodCallHandler(canal, null));
+        await tester.runAsync(
+          () => Armazenamento.instance.salvarPerfilPaciente(ana),
+        );
+        await pump(tester, const PreConsultaPage());
+        await tap(
+          tester,
+          find.text('Li e concordo com o termo de consentimento.'),
+        );
+        for (var i = 0; i < 6; i++) {
+          await continuar(tester);
+        }
+        await tap(tester, find.text('Enviar por e-mail para a médica'));
+        expect(pedido!['para'], emailConsultorio);
+        expect(
+          pedido!['corpo'] as String,
+          contains('FORMULÁRIO DE PRÉ-CONSULTA — Ana Exemplo Completo'),
+        );
+        final p = PreConsulta.parse(
+          File(pedido!['arquivo'] as String).readAsStringSync(),
+        );
+        expect(p.nomePaciente, 'Ana Exemplo Completo');
+        expect(
+          await tester.runAsync(
+            () => Armazenamento.instance.config('pre_consulta_enviada_em'),
+          ),
+          isNull,
+        );
+        status = 'enviado';
+        await tap(tester, find.text('Enviar por e-mail para a médica'));
+        expect(find.text('E-mail enviado à médica.'), findsOneWidget);
+        expect(
+          await tester.runAsync(
+            () => Armazenamento.instance.config('pre_consulta_enviada_em'),
+          ),
+          isNotNull,
+        );
+        expect(shared, isEmpty);
+      },
+    );
+
+    testWidgets('teclado fecha pela tecla de retorno e ao tocar fora', (
+      tester,
+    ) async {
+      await tester.runAsync(
+        () => Armazenamento.instance.salvarPerfilPaciente(ana),
+      );
+      await pump(tester, const PreConsultaPage());
+      await tap(
+        tester,
+        find.text('Li e concordo com o termo de consentimento.'),
+      );
+      await continuar(tester);
+      await escrever(tester, 'Endereço completo', 'Quadra 1');
+      expect(tester.testTextInput.isVisible, isTrue);
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+      expect(tester.testTextInput.isVisible, isFalse);
+      await escrever(tester, 'Endereço completo', 'Quadra 1, casa 2');
+      expect(tester.testTextInput.isVisible, isTrue);
+      await tester.tap(find.text('Endereço'));
+      await tester.pumpAndSettle();
+      expect(tester.testTextInput.isVisible, isFalse);
+    });
+
+    testWidgets('sem plano, a tela inicial oferece a pré-consulta', (
+      tester,
+    ) async {
+      await tester.runAsync(
+        () => Armazenamento.instance.salvarPerfilPaciente(ana),
+      );
+      await pump(tester, HojePage(plano: null, refresh: () async {}));
+      await tester.ensureVisible(find.text('Fazer a pré-consulta'));
+      await tester.tap(find.text('Fazer a pré-consulta'));
+      for (var i = 0; i < 20; i++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 80)),
+        );
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      expect(find.text('Antes de começar'), findsOneWidget);
+    });
+
+    testWidgets('etapas aceitam fonte ampliada', (tester) async {
+      await tester.runAsync(
+        () => Armazenamento.instance.salvarPerfilPaciente(ana),
+      );
+      await pump(tester, const PreConsultaPage(), scale: 2.6);
+      await tap(
+        tester,
+        find.text('Li e concordo com o termo de consentimento.'),
+      );
+      for (var i = 0; i < 6; i++) {
+        await continuar(tester);
+        expect(tester.takeException(), isNull);
+      }
+      expect(find.text('Revisar e enviar'), findsOneWidget);
+    });
+  });
 }

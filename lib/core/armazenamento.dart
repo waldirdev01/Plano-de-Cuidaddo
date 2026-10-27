@@ -105,6 +105,8 @@ class Armazenamento {
     {'chave': key, 'valor': value},
     conflictAlgorithm: ConflictAlgorithm.replace,
   );
+  Future<void> removerConfig(String key) async =>
+      (await db).delete('config', where: 'chave=?', whereArgs: [key]);
   Future<String?> papel() => config('papel');
 
   /// Received snapshots live separately from patient plans and daily records.

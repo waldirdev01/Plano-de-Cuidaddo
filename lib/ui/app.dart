@@ -23,6 +23,7 @@ import '../core/importacao_pdf.dart';
 import '../core/exportacao_pdf.dart';
 import '../core/padrao_pdf.dart';
 import '../core/plano.dart';
+import '../core/pre_consulta.dart';
 import '../core/treino.dart';
 import '../core/retorno_acompanhamento.dart';
 
@@ -32,6 +33,7 @@ part 'alimentacao.dart';
 part 'importacao_pdf.dart';
 part 'retorno_acompanhamento.dart';
 part 'treino.dart';
+part 'pre_consulta.dart';
 
 const fundo = Color(0xFFF6F4EF);
 const verde = Color(0xFF4A5541);
@@ -1351,6 +1353,12 @@ class _AjustesPageState extends State<AjustesPage> {
           await widget.refresh();
         },
       ),
+      ListTile(
+        leading: const Icon(Icons.assignment_outlined),
+        title: const Text('Pré-consulta', style: TextStyle(fontSize: 17)),
+        subtitle: const Text('Formulário para a médica antes da consulta'),
+        onTap: () => _abrirPreConsulta(context),
+      ),
       SwitchListTile(
         title: const Text('Lembretes locais', style: TextStyle(fontSize: 17)),
         subtitle: const Text('Os horários do plano e os avisos de retorno'),
@@ -1956,6 +1964,18 @@ class _Vazio extends StatelessWidget {
             onPressed: onImport,
             icon: const Icon(Icons.file_open),
             label: const Text('Importar plano'),
+          ),
+          const SizedBox(height: 24),
+          const Text(
+            'Ainda não teve a primeira consulta?',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 17),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: () => _abrirPreConsulta(context),
+            icon: const Icon(Icons.assignment_outlined),
+            label: const Text('Fazer a pré-consulta'),
           ),
         ],
       ),

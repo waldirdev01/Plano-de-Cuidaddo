@@ -11,6 +11,72 @@ import 'plano.dart';
 const termoPreConsultaVersao = '20/09/2026, rev. 2';
 const termosPreConsultaAceitos = {termoPreConsultaVersao};
 
+/// Verbatim from the web form; the doctor chose to keep it for now even
+/// though it describes WhatsApp/e-mail delivery (see the plan doc).
+const termoPreConsultaParagrafos = [
+  (
+    'Quem é responsável. ',
+    'Priscila Carvalho, médica (CRM-DF 36362), do Consultório Priscila Carvalho, é a responsável pelo tratamento dos seus dados neste formulário e no atendimento. Contato: prikroc@gmail.com.',
+  ),
+  (
+    'O que este formulário pede. ',
+    'Dados de identificação (nome, CPF, data de nascimento, sexo, e-mail, nome da mãe e endereço), informações de saúde (doenças, alergias, história da família, medidas, sono, humor, hábitos e saúde hormonal). Depois do formulário, o consultório poderá pedir, por mensagem, duas fotos do corpo (frente e perfil); enviá-las é opcional. São dados pessoais sensíveis, protegidos de forma especial pela Lei Geral de Proteção de Dados (LGPD, Lei nº 13.709/2018). Preencher é voluntário: você pode deixar em branco o que não quiser responder.',
+  ),
+  (
+    'Para que serão usados. ',
+    'Somente para abrir o seu prontuário, avaliar a sua saúde e conduzir a consulta e o acompanhamento. Se você enviar as fotos, elas serão usadas apenas para avaliar o seu corpo e acompanhar a sua evolução. As informações e as fotos não serão usadas em divulgação, redes sociais ou site, nem compartilhadas com terceiros para outras finalidades, salvo obrigação legal ou ordem judicial.',
+  ),
+  (
+    'Como as informações chegam à médica. ',
+    'O formulário não guarda o que você escreve em nenhum servidor: tudo fica neste aparelho até você enviar. Ao enviar, o resumo chega ao WhatsApp e/ou ao e-mail do consultório, que são serviços de terceiros com regras próprias. O WhatsApp do consultório é atendido por uma pessoa de apoio, que pode ler o resumo para organizar o atendimento, sem interpretar nem responder sobre o conteúdo, e que se compromete com o sigilo. O e-mail é acessado apenas pela médica. Se você enviar as fotos pelo WhatsApp, quem atende o consultório também poderá vê-las; se preferir, envie-as por e-mail, que só a médica acessa.',
+  ),
+  (
+    'Sigilo e guarda. ',
+    'Suas informações são protegidas pelo sigilo médico. O que for necessário ao seu atendimento é registrado no prontuário eletrônico, que a lei manda guardar por, no mínimo, 20 anos a partir do último registro.',
+  ),
+  (
+    'Seus direitos. ',
+    'Você pode pedir, a qualquer momento, confirmação de que tratamos os seus dados, acesso a eles, correção e informação sobre com quem foram compartilhados, e pode retirar a autorização para o uso das fotos. O que já estiver no prontuário precisa ser mantido durante o prazo legal. Fale com a médica pelo e-mail acima.',
+  ),
+  (
+    'Atendimento por telemedicina. ',
+    'A consulta é por videochamada, conforme a Resolução CFM nº 2.314/2022. Ela tem limites: não substitui o exame físico, e a médica pode indicar atendimento presencial ou outro serviço sempre que julgar necessário. Você pode recusar o atendimento por telemedicina.',
+  ),
+  (
+    'Não é atendimento de urgência. ',
+    'Em emergência, ligue 192 (SAMU); em crise emocional, 188 (CVV).',
+  ),
+  (
+    'Ferramentas de apoio. ',
+    'A médica pode usar ferramentas digitais de apoio (por exemplo, para calcular escalas e organizar as informações), cuidando para não expor os seus dados de identificação.',
+  ),
+  (
+    'Aceite. ',
+    'Ao marcar a caixa abaixo, declaro que li e entendi este termo, que preenchi o formulário com os meus dados e que concordo com o tratamento dos meus dados de saúde (e das fotos, se eu as enviar) nas condições acima e com o atendimento por telemedicina.',
+  ),
+];
+
+/// Detail prompts shown when one of these items is ticked; like the web
+/// form, other items have no detail box.
+const detalheComorbidade = {
+  'Problema nos rins': 'Que tipo de problema? Desde quando?',
+  'Já teve infarto, AVC ou outro problema cardiovascular':
+      'O que foi e em que ano?',
+  'Ansiedade, depressão ou outro problema de humor': 'Qual? Desde quando?',
+  'Problema de tireoide (hipo ou hipertireoidismo)': 'Qual? Desde quando?',
+};
+const detalheFamilia = {
+  'Câncer antes dos 50 anos':
+      'Que tipo de câncer? Quem teve (mãe, pai, irmã...) e com que idade?',
+  'Problema nos rins': 'Que tipo de problema? Quem teve e com que idade?',
+  'Problema cardíaco antes dos 55 anos (homem) ou 65 (mulher)':
+      'O que foi (infarto, AVC...)? Quem teve e com que idade?',
+};
+const videoMedidasPreConsulta = 'https://youtu.be/nKkxE4-zBAE';
+
+/// Clinic address named in the consent term; the e-mail button sends here.
+const emailConsultorio = 'prikroc@gmail.com';
+
 const comorbidadesPreConsulta = [
   'Pressão alta (hipertensão)',
   'Diabetes tipo 2',
@@ -113,7 +179,7 @@ class PreConsulta {
 
   /// Empty answers in the exact shape the parser accepts.
   static Map<String, dynamic> respostasVazias() => {
-    'ident': {
+    'ident': <String, dynamic>{
       'cpf': '',
       'sexo': null,
       'email': '',
@@ -121,21 +187,30 @@ class PreConsulta {
       'cep': '',
       'logradouro': '',
     },
-    'saude': {
-      'comorbidades': <String>[],
-      'detalhes': <String, String>{},
+    'saude': <String, dynamic>{
+      'comorbidades': <dynamic>[],
+      'detalhes': <String, dynamic>{},
       'outras': '',
       'cirurgias': '',
       'alergias': '',
-      'historiaFamiliar': <String>[],
-      'famDetalhes': <String, String>{},
+      'historiaFamiliar': <dynamic>[],
+      'famDetalhes': <String, dynamic>{},
     },
     'medidas': medidasVazias(),
-    'alimentacao': {'emocional': null},
+    'alimentacao': <String, dynamic>{'emocional': null},
     'sono': sonoVazio(),
     'emocional': emocionalVazio(),
-    'habitos': {'alcool': null, 'tabagismo': null, 'apoio': null},
-    'hormonal': {'dum': null, 'ciclo': null, 'menopausa': null, 'hormonio': ''},
+    'habitos': <String, dynamic>{
+      'alcool': null,
+      'tabagismo': null,
+      'apoio': null,
+    },
+    'hormonal': <String, dynamic>{
+      'dum': null,
+      'ciclo': null,
+      'menopausa': null,
+      'hormonio': '',
+    },
   };
 
   static PreConsulta parse(String source, {DateTime? agora}) {
@@ -268,6 +343,150 @@ class PreConsulta {
   }
 }
 
+/// Readable summary in the web form's wording, for the e-mail body and the
+/// doctor's record. Lists answers only; no scores or classifications.
+String resumoPreConsulta(PreConsulta p) {
+  final r = p.respostas;
+  final ident = r['ident'] as Map<String, dynamic>;
+  final saude = r['saude'] as Map<String, dynamic>;
+  final linhas = <String>[];
+  void add(String s) => linhas.add(s);
+  void secao(String titulo) => linhas.addAll(['', titulo]);
+  String data(String iso) => iso.split('-').reversed.join('/');
+  String ou(Object? v, String vazio) =>
+      v == null || (v is String && v.trim().isEmpty) ? vazio : '$v';
+  String numero(num v) => v == v.roundToDouble()
+      ? v.toInt().toString()
+      : v.toString().replaceAll('.', ',');
+  String comDetalhes(List lista, Map detalhes) => lista
+      .map((x) {
+        final d = (detalhes[x] as String? ?? '').trim();
+        return d.isEmpty ? '$x' : '$x ($d)';
+      })
+      .join('; ');
+
+  add(
+    'FORMULÁRIO DE PRÉ-CONSULTA — ${p.nomePaciente} — ${data(Plano.formatDia(p.criadoEm))}',
+  );
+  add(
+    'Termo de consentimento (versão ${p.data['termo']['versao']}): aceito em ${data(Plano.formatDia(DateTime.parse(p.data['termo']['aceitoEm'] as String)))}.',
+  );
+  secao('IDENTIFICAÇÃO (para abertura de prontuário)');
+  add('Nome: ${p.nomePaciente}');
+  add('CPF: ${ou(ident['cpf'], '—')}');
+  add('Nascimento: ${data(p.nascimentoPaciente)}');
+  add('E-mail: ${ou(ident['email'], '—')}');
+  add('Nome da mãe: ${ou(ident['nomeMae'], '—')}');
+  final endereco = (ident['logradouro'] as String).trim();
+  final cep = ident['cep'] as String;
+  if (endereco.isNotEmpty || cep.isNotEmpty) {
+    add(
+      'Endereço: $endereco${endereco.isNotEmpty && cep.isNotEmpty ? ' — ' : ''}${cep.isEmpty ? '' : 'CEP $cep'}',
+    );
+  }
+  if (ident['sexo'] != null) add('Sexo: ${ident['sexo']}');
+
+  secao('ANTECEDENTES');
+  final comorb = saude['comorbidades'] as List;
+  add(
+    comorb.isEmpty
+        ? 'Nega comorbidades'
+        : comDetalhes(comorb, saude['detalhes'] as Map),
+  );
+  if ((saude['outras'] as String).trim().isNotEmpty) {
+    add('Outras: ${saude['outras']}');
+  }
+  if ((saude['cirurgias'] as String).trim().isNotEmpty) {
+    add('Cirurgias: ${saude['cirurgias']}');
+  }
+  add('Alergias: ${ou(saude['alergias'], 'nenhuma referida')}');
+  final fam = saude['historiaFamiliar'] as List;
+  add(
+    'História familiar: ${fam.isEmpty ? 'nenhuma referida' : comDetalhes(fam, saude['famDetalhes'] as Map)}',
+  );
+
+  secao('MEDIDAS (autorreferidas)');
+  final m = p.medidas;
+  final medidas = [
+    for (final (k, u) in [
+      ('peso', 'kg'),
+      ('altura', 'cm'),
+      ('cintura', 'cm'),
+      ('quadril', 'cm'),
+    ])
+      if (m[k] != null) '$k ${numero(m[k] as num)}$u',
+  ];
+  add(medidas.isEmpty ? 'não preenchidas' : medidas.join(', '));
+  if (p.imc != null) add('IMC: ${numero(p.imc!)}');
+  if (p.relacaoCinturaQuadril != null) {
+    add('Relação cintura-quadril: ${numero(p.relacaoCinturaQuadril!)}');
+  }
+
+  secao('HÁBITOS');
+  final h = r['habitos'] as Map<String, dynamic>;
+  final emocional = r['alimentacao']['emocional'];
+  final habitos = [
+    if (emocional != null) 'comer emocional $emocional/10',
+    if (h['alcool'] != null)
+      'álcool: ${alcoolOpcoes[h['alcool'] as int].toLowerCase()}',
+    if (h['tabagismo'] != null)
+      'cigarro: ${(h['tabagismo'] as String).toLowerCase()}',
+    if (h['apoio'] != null)
+      'apoio de família/pessoas próximas (0-10): ${h['apoio']}',
+  ];
+  add(habitos.isEmpty ? 'não respondido' : habitos.join(', '));
+
+  secao('SONO');
+  final s = r['sono'] as Map<String, dynamic>;
+  final despertar = [
+    if (s['acordaVezes'] != null) '${s['acordaVezes']}x por noite',
+    if ((s['acordaMotivo'] as String).trim().isNotEmpty)
+      'motivo: ${s['acordaMotivo']}',
+  ];
+  final sono = [
+    if (s['horas'] != null) '${numero(s['horas'] as num)}h/noite',
+    if (s['restaurador'] != null)
+      'restaurador: ${(s['restaurador'] as String).toLowerCase()}',
+    if (s['ronco'] != null) 'ronco: ${(s['ronco'] as String).toLowerCase()}',
+    if (s['acordaNoite'] == 'Sim')
+      'acorda à noite: sim${despertar.isEmpty ? '' : ' (${despertar.join('; ')})'}'
+    else if (s['acordaNoite'] == 'Não')
+      'acorda à noite: não',
+    if (s['pausas'] != null)
+      'pausas observadas: ${(s['pausas'] as String).toLowerCase()}',
+  ];
+  add(sono.isEmpty ? 'não respondido' : sono.join(', '));
+
+  secao('HUMOR (últimas 2 semanas, respostas)');
+  final e = r['emocional'] as Map<String, dynamic>;
+  final humor = [
+    for (final (chave, itens) in [('phq2', phq2Itens), ('gad2', gad2Itens)])
+      for (var i = 0; i < itens.length; i++)
+        if ((e[chave] as List)[i] != null)
+          '${itens[i]}: ${likert4[(e[chave] as List)[i] as int]}',
+  ];
+  if (humor.isEmpty) {
+    add('não respondido');
+  } else {
+    humor.forEach(add);
+  }
+
+  if (ident['sexo'] == 'F') {
+    secao('SAÚDE HORMONAL');
+    final hm = r['hormonal'] as Map<String, dynamic>;
+    final hormonal = [
+      if (hm['dum'] != null) 'DUM ${data(hm['dum'] as String)}',
+      if (hm['ciclo'] != null) 'ciclo ${(hm['ciclo'] as String).toLowerCase()}',
+      if (hm['menopausa'] != null)
+        'menopausa: ${(hm['menopausa'] as String).toLowerCase()}',
+      if ((hm['hormonio'] as String).trim().isNotEmpty)
+        'hormônio/ACO: ${hm['hormonio']}',
+    ];
+    add(hormonal.isEmpty ? 'não respondido' : hormonal.join(', '));
+  }
+  return linhas.join('\n');
+}
+
 /// Short form the doctor requests per patient; answers only the chosen items.
 class Reavaliacao {
   Reavaliacao._(this.data);
@@ -372,13 +591,13 @@ class Reavaliacao {
   }
 }
 
-Map<String, dynamic> medidasVazias() => {
+Map<String, dynamic> medidasVazias() => <String, dynamic>{
   'peso': null,
   'altura': null,
   'cintura': null,
   'quadril': null,
 };
-Map<String, dynamic> sonoVazio() => {
+Map<String, dynamic> sonoVazio() => <String, dynamic>{
   'horas': null,
   'restaurador': null,
   'acordaNoite': null,
@@ -387,9 +606,9 @@ Map<String, dynamic> sonoVazio() => {
   'ronco': null,
   'pausas': null,
 };
-Map<String, dynamic> emocionalVazio() => {
-  'phq2': [null, null],
-  'gad2': [null, null],
+Map<String, dynamic> emocionalVazio() => <String, dynamic>{
+  'phq2': <dynamic>[null, null],
+  'gad2': <dynamic>[null, null],
 };
 
 /// Body mass index, one decimal; shown as a number only, never classified.

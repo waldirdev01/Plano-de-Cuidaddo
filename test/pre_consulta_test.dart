@@ -92,6 +92,55 @@ void main() {
       expect(lido.data['termo']['versao'], termoPreConsultaVersao);
     });
 
+    test('resumo legível segue o texto do formulário web, sem somas', () {
+      final texto = resumoPreConsulta(preConsultaAna());
+      expect(
+        texto,
+        startsWith(
+          'FORMULÁRIO DE PRÉ-CONSULTA — Ana Exemplo Completo — 27/10/2026',
+        ),
+      );
+      expect(texto, contains('CPF: 123.456.789-00'));
+      expect(
+        texto,
+        contains('Endereço: Quadra 1, casa 2, Brasília/DF — CEP 70000-000'),
+      );
+      expect(texto, contains('Diabetes tipo 2 (desde 2020); $comorbidadeSop'));
+      expect(texto, contains('Câncer antes dos 50 anos (mãe, mama, 45 anos)'));
+      expect(
+        texto,
+        contains('peso 78,5kg, altura 165cm, cintura 92cm, quadril 104cm'),
+      );
+      expect(texto, contains('IMC: 28,8'));
+      expect(texto, contains('Relação cintura-quadril: 0,88'));
+      expect(texto, contains('álcool: mensalmente ou menos'));
+      expect(
+        texto,
+        contains('acorda à noite: sim (2x por noite; motivo: banheiro)'),
+      );
+      expect(
+        texto,
+        contains('Pouco interesse ou prazer em fazer as coisas: Vários dias'),
+      );
+      expect(texto, isNot(contains('PHQ')));
+      expect(texto, contains('DUM 10/10/2026, ciclo regular, menopausa: não'));
+    });
+
+    test('resumo de respostas vazias não inventa dados', () {
+      final texto = resumoPreConsulta(
+        PreConsulta.criar(
+          ana,
+          PreConsulta.respostasVazias(),
+          termoAceitoEm: agora,
+          agora: agora,
+        ),
+      );
+      expect(texto, contains('Nega comorbidades'));
+      expect(texto, contains('não preenchidas'));
+      expect(texto, isNot(contains('IMC')));
+      expect(texto, isNot(contains('SAÚDE HORMONAL')));
+    });
+
     test('respostas vazias são aceitas e não calculam medidas', () {
       final p = PreConsulta.criar(
         ana,
