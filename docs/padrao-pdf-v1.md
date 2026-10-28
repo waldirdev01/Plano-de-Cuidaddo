@@ -30,7 +30,11 @@ Somente `CONTAGEM` exige adicionalmente Quantidade diaria, Unidade, Distribuicao
 
 Documento inválido é recusado com mensagem legível, sem alterações no banco ou notificações. Documento estruturalmente válido entra em rascunho; os campos podem ser corrigidos e revalidados na conclusão. Confirmações de identidade, período e conteúdo continuam obrigatórias. Mudanças invalidam as três confirmações. O padrão fica em `padraoPdf`, mantendo o formato local `rascunho-importacao-pdf` v1 e os IDs de rascunho.
 
-Rascunhos antigos sem `padraoPdf` são preservados e abrem com identificação de modelo antigo, incluindo suas decisões já registradas. Não são reinterpretados nem migrados silenciosamente, e não são exportados como v4. **Novas importações do modelo antigo são recusadas**: a profissional deve preencher o modelo novo. SQLite não muda de versão; o paciente atualizado passa a aceitar `.plano` v4, enquanto clientes anteriores pedem atualização. Backup do aplicativo ainda não inclui rascunhos PDF.
+Rascunhos antigos sem `padraoPdf` são preservados e abrem com identificação de modelo antigo, incluindo suas decisões já registradas. Não são reinterpretados nem migrados silenciosamente, e não são exportados como v4. **Novas importações do modelo antigo são recusadas**: a profissional deve preencher o modelo novo. SQLite não muda de versão; o paciente atualizado passa a aceitar `.plano` v4, enquanto clientes anteriores pedem atualização. Desde a etapa 1 da pré-consulta, o backup do aplicativo inclui os rascunhos de PDF.
+
+## Complementos da conferência
+
+O modelo não tem campos de treino nem de metas de macro. Na conferência, a médica pode incluir um **Treino** (`docs/treino.md`) e uma **Rotina alimentar e metas de macro** (`docs/rotina-alimentar-v3.md`). A rotina estruturada substitui no `.plano` as refeições do PDF e a meta REFEICOES; as demais metas e o PDF original continuam. Os dois complementos ficam no rascunho, são validados ao restaurar o backup e desfazem as confirmações quando mudam.
 
 ## Verificação
 

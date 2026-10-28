@@ -29,26 +29,29 @@ Plano planoDoPdfConferido(
     );
   }
   final c = r.campos;
+  // A plan holds one meal routine: the structured one replaces the PDF meals.
+  final alimentacao = r.data['alimentacao'] as Map<String, dynamic>?;
   final metas = <Map<String, dynamic>>[
     for (final m in r.lista('metas'))
-      {
-        'id': m['id'],
-        'titulo': m['titulo'],
-        'descricao': m['descricao'],
-        'controleConfirmacao': true,
-        'tipo': m['tipo'] == 'checklist' ? 'refeicoes' : m['tipo'],
-        'lembretes': (m['horarios'] as String).trim().isEmpty
-            ? <String>[]
-            : (m['horarios'] as String)
-                  .split(',')
-                  .map((s) => s.trim())
-                  .toList(),
-        if (m['tipo'] == 'contador') ...{
-          'alvo': num.parse((m['alvo'] as String).replaceAll(',', '.')),
-          'unidade': m['unidade'],
-          'distribuicao': m['distribuicao'],
+      if (alimentacao == null || m['tipo'] != 'checklist')
+        {
+          'id': m['id'],
+          'titulo': m['titulo'],
+          'descricao': m['descricao'],
+          'controleConfirmacao': true,
+          'tipo': m['tipo'] == 'checklist' ? 'refeicoes' : m['tipo'],
+          'lembretes': (m['horarios'] as String).trim().isEmpty
+              ? <String>[]
+              : (m['horarios'] as String)
+                    .split(',')
+                    .map((s) => s.trim())
+                    .toList(),
+          if (m['tipo'] == 'contador') ...{
+            'alvo': num.parse((m['alvo'] as String).replaceAll(',', '.')),
+            'unidade': m['unidade'],
+            'distribuicao': m['distribuicao'],
+          },
         },
-      },
   ];
   final dados = <String, dynamic>{
     'formato': 'plano-de-cuidado',
@@ -67,19 +70,21 @@ Plano planoDoPdfConferido(
     'metas': metas,
     'camposDiarios': <Map<String, dynamic>>[],
     'refeicoesPrescritas': [
-      for (final m in r.lista('refeicoes'))
-        {
-          'id': m['id'],
-          'titulo': m['titulo'],
-          'horario': m['horario'],
-          'regra': m['regra'],
-          'condicao': m['condicao'],
-          'descricao': m['descricao'],
-        },
+      if (alimentacao == null)
+        for (final m in r.lista('refeicoes'))
+          {
+            'id': m['id'],
+            'titulo': m['titulo'],
+            'horario': m['horario'],
+            'regra': m['regra'],
+            'condicao': m['condicao'],
+            'descricao': m['descricao'],
+          },
     ],
     'linkMonteSeuPrato': c['link'],
     'secoes': copiarDados({'s': r.lista('secoes')})['s'],
     'pdf': copiarDados(r.data['pdf'] as Map<String, dynamic>),
+    if (alimentacao != null) 'alimentacao': copiarDados(alimentacao),
     if (r.data['treino'] != null)
       'treino': PrescricaoTreino.fromMap(r.data['treino'] as Map).toMap(),
     'origemPdf': {

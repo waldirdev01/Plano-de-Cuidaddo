@@ -10,16 +10,20 @@ exportação da interface, consulte `continuidade.md` e `contrato-plano.md`.
 
 ## Fluxo da profissional
 
-1. Abra o editor do Plano de Cuidado.
-2. Em **Rotina alimentar**, escolha **Carregar modelo de teste** para testar
-   o fluxo ou **Importar JSON da calculadora** para usar os dados estruturados
-   produzidos pela calculadora/IA.
-3. Confira título, refeições, opções, porções, qualidade e horários.
-4. Salve e exporte o `.plano` v3 para enviar à pessoa correta.
+1. No editor do Plano de Cuidado, toque em **Incluir rotina alimentar** (ou
+   **Editar rotina e metas de macro**). Num plano vindo de PDF, use o card
+   **Rotina alimentar e metas de macro** da tela de conferência.
+2. Escolha **Importar JSON da calculadora** para usar os dados estruturados
+   produzidos pela calculadora/IA, ou **Carregar modelo de teste** para testar.
+3. Ajuste as **metas do dia** (kcal, proteína, carboidrato, gordura e fibra).
+   A tela mostra quanto a rotina padrão soma; mudar as metas não altera as
+   porções das opções.
+4. Toque em **Aplicar**, salve (ou conclua a conferência) e exporte o `.plano`.
 
-O JSON pode ser o bloco `alimentacao` isolado ou um objeto que contenha essa
-chave. Cada refeição tem `id`, `titulo`, `horario` opcional e `opcoes`; cada
-opção tem `quantidade`, `unidade` e os cinco valores de `nutrientes`.
+Num plano de PDF, a rotina estruturada **substitui** no arquivo da paciente as
+refeições lidas do PDF e a meta REFEICOES, porque um plano tem uma só rotina
+alimentar. O PDF original continua anexado. Incluir, alterar ou remover a
+rotina desfaz as confirmações da conferência.
 
 ## Fluxo do paciente
 

@@ -807,49 +807,28 @@ class _EditorPlanoPageState extends State<EditorPlanoPage> {
     }
   }
 
-  Future<void> _importarAlimentacao() async {
-    try {
-      final result = await FilePicker.pickFiles(type: FileType.any);
-      if (result.isEmpty) return;
-      final file = result.single;
-      if (file.path == null) {
-        throw const FormatException('Não foi possível ler o arquivo.');
-      }
-      final raw = jsonDecode(utf8.decode(await File(file.path!).readAsBytes()));
-      if (raw is! Map) {
-        throw const FormatException(
-          'O arquivo de alimentação não é um JSON válido.',
-        );
-      }
-      final block = raw['alimentacao'] is Map ? raw['alimentacao'] : raw;
-      if (block is! Map) {
-        throw const FormatException('Bloco de alimentação ausente.');
-      }
-      AlimentacaoPlano.fromMap(block);
-      setState(
-        () =>
-            data['alimentacao'] = copiarDados(Map<String, dynamic>.from(block)),
-      );
-      if (mounted) _message(context, 'Rotina alimentar importada.');
-    } catch (e) {
-      if (mounted) {
-        _message(
+  Future<void> _editarAlimentacao() async {
+    final atual = data['alimentacao'] as Map<String, dynamic>?;
+    final resultado =
+        await Navigator.push<({Map<String, dynamic>? alimentacao})>(
           context,
-          e is FormatException
-              ? e.message
-              : 'Não foi possível importar a alimentação.',
+          MaterialPageRoute(
+            builder: (_) => EditorAlimentacaoPage(
+              nome: paciente.text.trim().isEmpty
+                  ? 'paciente'
+                  : paciente.text.trim(),
+              inicial: atual,
+            ),
+          ),
         );
+    if (resultado == null) return;
+    setState(() {
+      if (resultado.alimentacao == null) {
+        data.remove('alimentacao');
+      } else {
+        data['alimentacao'] = resultado.alimentacao;
       }
-    }
-  }
-
-  void _modeloAlimentacao() {
-    final sample = AlimentacaoPlano.modeloTeste();
-    setState(() => data['alimentacao'] = sample);
-    _message(
-      context,
-      'Modelo de alimentação de teste carregado. Revise antes de exportar.',
-    );
+    });
   }
 
   Future<void> _remover(String key, int index) async {
@@ -1152,30 +1131,20 @@ class _EditorPlanoPageState extends State<EditorPlanoPage> {
               'Rotina alimentar',
               style: Theme.of(context).textTheme.titleLarge,
             ),
-            if (alimentacao != null) ...[
-              Text(alimentacao!.titulo),
-              Text(
-                '${alimentacao!.refeicoes.length} refeições · rotina mensal',
-              ),
-              TextButton.icon(
-                onPressed: () => setState(() => data.remove('alimentacao')),
-                icon: const Icon(Icons.delete_outline),
-                label: const Text('Remover rotina alimentar'),
-              ),
-            ],
-            OutlinedButton.icon(
-              onPressed: _importarAlimentacao,
-              icon: const Icon(Icons.file_open),
-              label: const Text('Importar JSON da calculadora'),
+            Text(
+              alimentacao == null
+                  ? 'Não incluída.'
+                  : '${alimentacao!.titulo} · ${alimentacao!.refeicoes.length} refeições · ${_numeroMacro(alimentacao!.meta.kcal)} kcal',
+              style: const TextStyle(color: apoio),
             ),
             OutlinedButton.icon(
-              onPressed: _modeloAlimentacao,
-              icon: const Icon(Icons.science_outlined),
-              label: const Text('Carregar modelo de teste'),
-            ),
-            const Text(
-              'O JSON pode ser gerado a partir do material revisado pela profissional. O modelo de teste serve apenas para experimentar o fluxo.',
-              style: TextStyle(color: apoio, fontSize: 13),
+              onPressed: _editarAlimentacao,
+              icon: const Icon(Icons.restaurant_outlined),
+              label: Text(
+                alimentacao == null
+                    ? 'Incluir rotina alimentar'
+                    : 'Editar rotina e metas de macro',
+              ),
             ),
             const SizedBox(height: 24),
             FilledButton.icon(

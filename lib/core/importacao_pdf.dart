@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'alimentacao.dart';
 import 'edicao_plano.dart';
 import 'plano.dart';
 import 'padrao_pdf.dart';
@@ -381,6 +382,13 @@ class ArquivosRascunhoPdf {
       }
     }
     if (r.data['treino'] != null) PrescricaoTreino.validar(r.data['treino']);
+    final alimentacao = r.data['alimentacao'];
+    if (alimentacao != null) {
+      if (alimentacao is! Map) {
+        throw const FormatException('Rotina alimentar danificada no rascunho.');
+      }
+      AlimentacaoPlano.fromMap(alimentacao);
+    }
     final checks = r.data['confirmacoes'] as Map;
     if ([
       'identidade',

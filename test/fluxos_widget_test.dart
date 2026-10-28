@@ -410,6 +410,72 @@ void main() {
     },
   );
 
+  testWidgets(
+    'PDF: rotina alimentar com metas de macro substitui as refeições do PDF',
+    (tester) async {
+      final store = ArquivosRascunhoPdf(
+        diretorio: Directory('${dir.path}/pdf-alimentacao'),
+      );
+      await pump(
+        tester,
+        ConferenciaPdfPage(rascunho: rascunhoConferido(), arquivos: store),
+      );
+      await tap(
+        tester,
+        find.text(
+          'Não incluída. Toque para incluir metas de calorias e macros.',
+        ),
+      );
+      expect(
+        find.textContaining('substitui as 4 refeições lidas do PDF'),
+        findsOneWidget,
+      );
+      await tap(tester, find.text('Carregar modelo de teste'));
+      final kcal = find.widgetWithText(TextField, 'Calorias (kcal)');
+      expect(tester.widget<TextField>(kcal).controller!.text, '1800');
+      await tester.enterText(kcal, 'muito');
+      await tap(tester, find.text('Aplicar'));
+      expect(
+        find.text('Informe calorias (kcal) com um número.'),
+        findsOneWidget,
+      );
+      tester
+          .state<ScaffoldMessengerState>(find.byType(ScaffoldMessenger))
+          .hideCurrentSnackBar();
+      await tester.pumpAndSettle();
+      await tester.enterText(kcal, '2270');
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Proteína (g)'),
+        '104,5',
+      );
+      await tap(tester, find.text('Aplicar'));
+      expect(
+        find.text(
+          'Incluída: 2270 kcal · proteína 104,5 g. Substitui as refeições do PDF.',
+        ),
+        findsOneWidget,
+      );
+      for (final title in [
+        'Conferi o destinatário, o nome completo e o nascimento.',
+        'Conferi o período, retorno, envio e horários propostos.',
+        'Conferi a fidelidade das metas, refeições e textos e registrei as decisões necessárias.',
+      ]) {
+        await tap(tester, find.text(title));
+      }
+      await tap(tester, find.text('Concluir conferência'));
+      final saved = (await tester.runAsync(store.listar))!.single;
+      final plano = planoDoPdfConferido(
+        saved,
+        profissional: 'Médica Exemplo',
+        registro: 'CRM TESTE',
+      );
+      expect(plano.alimentacao!.meta.kcal, 2270);
+      expect(plano.alimentacao!.meta.proteina, 104.5);
+      expect(plano.refeicoesPrescritas, isEmpty);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('PDF: tela de conferência aceita fonte ampliada', (tester) async {
     await pump(
       tester,

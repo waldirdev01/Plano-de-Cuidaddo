@@ -139,6 +139,43 @@ class _ConferenciaPdfPageState extends State<ConferenciaPdfPage> {
     return 'Incluído: ${nomesNivelTreino[p.nivel]} · ${objetivosTreino[p.objetivo]}';
   }
 
+  String _resumoAlimentacao() {
+    final a = r.data['alimentacao'];
+    if (a is! Map) {
+      return 'Não incluída. Toque para incluir metas de calorias e macros.';
+    }
+    final m = AlimentacaoPlano.fromMap(a);
+    return 'Incluída: ${_numeroMacro(m.meta.kcal)} kcal · proteína ${_numeroMacro(m.meta.proteina)} g. Substitui as refeições do PDF.';
+  }
+
+  Future<void> _editarAlimentacao() async {
+    final atual = r.data['alimentacao'] as Map<String, dynamic>?;
+    final resultado =
+        await Navigator.push<({Map<String, dynamic>? alimentacao})>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => EditorAlimentacaoPage(
+              nome: (r.campos['nome'] as String).isEmpty
+                  ? 'Paciente a conferir'
+                  : r.campos['nome'] as String,
+              inicial: atual,
+              refeicoesPdf: r.lista('refeicoes').length,
+            ),
+          ),
+        );
+    if (resultado == null ||
+        jsonEncode(resultado.alimentacao) == jsonEncode(atual)) {
+      return;
+    }
+    _alterar(() {
+      if (resultado.alimentacao == null) {
+        r.data.remove('alimentacao');
+      } else {
+        r.data['alimentacao'] = resultado.alimentacao;
+      }
+    });
+  }
+
   Future<void> _editarTreino() async {
     final atual = r.data['treino'] as Map<String, dynamic>?;
     final resultado = await Navigator.push<({Map<String, dynamic>? treino})>(
@@ -585,6 +622,15 @@ class _ConferenciaPdfPageState extends State<ConferenciaPdfPage> {
                 aberto: true,
               ),
               if (padronizado) ...[
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.restaurant_outlined),
+                    title: const Text('Rotina alimentar e metas de macro'),
+                    subtitle: Text(_resumoAlimentacao()),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: saving ? null : _editarAlimentacao,
+                  ),
+                ),
                 Card(
                   child: ListTile(
                     leading: const Icon(Icons.fitness_center_outlined),

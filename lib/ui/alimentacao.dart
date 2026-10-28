@@ -455,3 +455,232 @@ class _MealCard extends StatelessWidget {
     );
   }
 }
+
+/// Reads a calculator JSON: the `alimentacao` block alone or inside an object.
+Future<Map<String, dynamic>?> _lerJsonAlimentacao() async {
+  final result = await FilePicker.pickFiles(type: FileType.any);
+  if (result.isEmpty) return null;
+  final file = result.single;
+  if (file.path == null) {
+    throw const FormatException('Não foi possível ler o arquivo.');
+  }
+  final Object? raw;
+  try {
+    raw = jsonDecode(utf8.decode(await File(file.path!).readAsBytes()));
+  } catch (_) {
+    throw const FormatException(
+      'O arquivo de alimentação não é um JSON válido.',
+    );
+  }
+  if (raw is! Map) {
+    throw const FormatException(
+      'O arquivo de alimentação não é um JSON válido.',
+    );
+  }
+  final block = raw['alimentacao'] is Map ? raw['alimentacao'] : raw;
+  if (block is! Map) {
+    throw const FormatException('Bloco de alimentação ausente.');
+  }
+  AlimentacaoPlano.fromMap(block);
+  return copiarDados(Map<String, dynamic>.from(block));
+}
+
+const _rotulosMacros = {
+  'kcal': 'Calorias (kcal)',
+  'proteina': 'Proteína (g)',
+  'carboidrato': 'Carboidrato (g)',
+  'gordura': 'Gordura (g)',
+  'fibra': 'Fibra (g)',
+};
+
+String _numeroMacro(num v) => v == v.roundToDouble()
+    ? '${v.round()}'
+    : v.toStringAsFixed(1).replaceAll('.', ',');
+
+/// Structured routine and its daily targets. Returns the block, or null to
+/// remove it; popping without saving returns nothing.
+class EditorAlimentacaoPage extends StatefulWidget {
+  const EditorAlimentacaoPage({
+    super.key,
+    required this.nome,
+    this.inicial,
+    this.refeicoesPdf = 0,
+  });
+  final String nome;
+  final Map<String, dynamic>? inicial;
+
+  /// Prescribed meals read from the PDF, replaced by this routine on export.
+  final int refeicoesPdf;
+  @override
+  State<EditorAlimentacaoPage> createState() => _EditorAlimentacaoPageState();
+}
+
+class _EditorAlimentacaoPageState extends State<EditorAlimentacaoPage> {
+  Map<String, dynamic>? dados;
+  final metas = {
+    for (final k in _rotulosMacros.keys) k: TextEditingController(),
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _usar(widget.inicial == null ? null : copiarDados(widget.inicial!));
+  }
+
+  @override
+  void dispose() {
+    for (final c in metas.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  void _usar(Map<String, dynamic>? novo) {
+    dados = novo;
+    final meta = novo?['meta'] as Map?;
+    for (final e in metas.entries) {
+      final v = meta?[e.key];
+      e.value.text = v is num ? _numeroMacro(v) : '';
+    }
+  }
+
+  Future<void> _importar() async {
+    try {
+      final novo = await _lerJsonAlimentacao();
+      if (novo == null) return;
+      setState(() => _usar(novo));
+      if (mounted) _message(context, 'Rotina alimentar importada.');
+    } catch (e) {
+      if (mounted) {
+        _message(
+          context,
+          e is FormatException
+              ? e.message
+              : 'Não foi possível importar a alimentação.',
+        );
+      }
+    }
+  }
+
+  void _salvar() {
+    final d = dados;
+    if (d == null) {
+      Navigator.pop(context, (alimentacao: null));
+      return;
+    }
+    final meta = <String, double>{};
+    for (final e in metas.entries) {
+      final t = e.value.text.trim().replaceAll(',', '.');
+      final v = RegExp(r'^\d+(?:\.\d+)?$').hasMatch(t)
+          ? double.tryParse(t)
+          : null;
+      if (v == null || !v.isFinite) {
+        _message(
+          context,
+          'Informe ${_rotulosMacros[e.key]!.toLowerCase()} com um número.',
+        );
+        return;
+      }
+      meta[e.key] = v;
+    }
+    final novo = copiarDados(d)..['meta'] = meta;
+    try {
+      AlimentacaoPlano.fromMap(novo);
+    } on FormatException catch (e) {
+      _message(context, e.message);
+      return;
+    }
+    Navigator.pop(context, (alimentacao: novo));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final d = dados;
+    final modelo = d == null ? null : AlimentacaoPlano.fromMap(d);
+    final padrao = modelo?.total(modelo.selecoesParaDia(''));
+    return Scaffold(
+      appBar: AppBar(title: Text('Alimentação de ${widget.nome}')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          const Text(
+            'Rotina com opções e nutrientes por porção. A paciente vê a estimativa do dia contra as metas abaixo e pode trocar uma refeição por outra opção da lista.',
+          ),
+          if (widget.refeicoesPdf > 0) ...[
+            const SizedBox(height: 12),
+            Text(
+              'No arquivo da paciente, esta rotina substitui as ${widget.refeicoesPdf} refeições lidas do PDF e a meta de refeições. O PDF original continua anexado ao plano.',
+              style: const TextStyle(color: alerta),
+            ),
+          ],
+          const SizedBox(height: 16),
+          if (modelo == null)
+            const Text(
+              'Nenhuma rotina incluída.',
+              style: TextStyle(color: apoio),
+            )
+          else ...[
+            Text(modelo.titulo, style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              '${modelo.refeicoes.length} refeições · ${modelo.refeicoes.fold<int>(0, (n, m) => n + m.opcoes.length)} opções',
+              style: const TextStyle(color: apoio),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Metas do dia',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            for (final e in metas.entries) ...[
+              TextField(
+                controller: e.value,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                textInputAction: TextInputAction.done,
+                decoration: InputDecoration(labelText: _rotulosMacros[e.key]),
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (padrao != null)
+              Text(
+                'A rotina padrão soma ${_numeroMacro(padrao.kcal)} kcal · proteína ${_numeroMacro(padrao.proteina)} g · carboidrato ${_numeroMacro(padrao.carboidrato)} g · gordura ${_numeroMacro(padrao.gordura)} g · fibra ${_numeroMacro(padrao.fibra)} g. Mudar as metas não altera as porções.',
+                style: const TextStyle(color: apoio),
+              ),
+            TextButton.icon(
+              onPressed: () => setState(() => _usar(null)),
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('Remover rotina alimentar'),
+            ),
+          ],
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _importar,
+            icon: const Icon(Icons.file_open),
+            label: Text(
+              modelo == null
+                  ? 'Importar JSON da calculadora'
+                  : 'Trocar pelo JSON da calculadora',
+            ),
+          ),
+          OutlinedButton.icon(
+            onPressed: () =>
+                setState(() => _usar(AlimentacaoPlano.modeloTeste())),
+            icon: const Icon(Icons.science_outlined),
+            label: const Text('Carregar modelo de teste'),
+          ),
+          const Text(
+            'O JSON pode ser gerado a partir do material revisado pela profissional. O modelo de teste serve apenas para experimentar o fluxo.',
+            style: TextStyle(color: apoio, fontSize: 13),
+          ),
+          const SizedBox(height: 24),
+          FilledButton.icon(
+            onPressed: _salvar,
+            icon: const Icon(Icons.check),
+            label: const Text('Aplicar'),
+          ),
+        ],
+      ),
+    );
+  }
+}
