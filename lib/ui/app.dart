@@ -35,6 +35,7 @@ part 'retorno_acompanhamento.dart';
 part 'treino.dart';
 part 'pre_consulta.dart';
 part 'pacientes.dart';
+part 'reavaliacao.dart';
 
 const fundo = Color(0xFFF6F4EF);
 const verde = Color(0xFF4A5541);
@@ -707,6 +708,12 @@ class _HojePageState extends State<HojePage> {
               style: const TextStyle(color: apoio),
             ),
           ),
+        if (p.reavaliacao != null)
+          _CartaoReavaliacao(
+            key: ValueKey('reavaliacao-${p.id}'),
+            plano: p,
+            preview: widget.preview,
+          ),
         ...p.metas.map(
           (m) => _CampoCard(
             key: ValueKey('${p.id}-${Plano.formatDia(day)}-${m['id']}'),
@@ -1234,6 +1241,30 @@ class MeuPlanoPage extends StatelessWidget {
   }
 }
 
+const chaveBackupFeito = 'backup_feito_em';
+
+/// The history lives only on this device, so the professional home asks for
+/// a copy after this many days.
+const diasLembreteBackup = 7;
+
+/// Shares the backup file. Anything but dismissing the sheet (saving to Files
+/// included) counts as a copy made.
+Future<bool> _exportarBackup(BuildContext context) async {
+  final f = await Armazenamento.instance.backup();
+  final result = await SharePlus.instance.share(
+    ShareParams(
+      files: [XFile(f.path, mimeType: 'application/octet-stream')],
+      text: 'Cópia de segurança do Plano de Cuidado',
+    ),
+  );
+  if (result.status == ShareResultStatus.dismissed) return false;
+  await Armazenamento.instance.setConfig(
+    chaveBackupFeito,
+    DateTime.now().toIso8601String(),
+  );
+  return true;
+}
+
 class AjustesPage extends StatefulWidget {
   const AjustesPage({super.key, required this.refresh, required this.plano});
   final Future<void> Function() refresh;
@@ -1372,6 +1403,13 @@ class _AjustesPageState extends State<AjustesPage> {
         subtitle: const Text('Formulário para a médica antes da consulta'),
         onTap: () => _abrirPreConsulta(context),
       ),
+      if (widget.plano?.reavaliacao != null)
+        ListTile(
+          leading: const Icon(Icons.event_repeat_outlined),
+          title: const Text('Reavaliação', style: TextStyle(fontSize: 17)),
+          subtitle: const Text('Atualizar o que a médica pediu'),
+          onTap: () => _abrirReavaliacao(context, widget.plano!),
+        ),
       SwitchListTile(
         title: const Text('Lembretes locais', style: TextStyle(fontSize: 17)),
         subtitle: const Text('Os horários do plano e os avisos de retorno'),
@@ -1466,15 +1504,7 @@ class _AjustesPageState extends State<AjustesPage> {
     setState(() => lock = v);
   }
 
-  Future<void> _backup() async {
-    final f = await Armazenamento.instance.backup();
-    await SharePlus.instance.share(
-      ShareParams(
-        files: [XFile(f.path, mimeType: 'application/octet-stream')],
-        text: 'Cópia de segurança do Plano de Cuidado',
-      ),
-    );
-  }
+  Future<void> _backup() => _exportarBackup(context);
 
   Future<void> _restore() async {
     final r = await FilePicker.pickFiles();

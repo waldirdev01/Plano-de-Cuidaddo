@@ -20,6 +20,7 @@ JSON UTF-8 com `formato: "plano-de-cuidado"` e `versao` inteira **1, 2, 3 ou 4**
 | `pdf` | opcional: nome e base64; bytes começam com `%PDF-` |
 | `alimentacao` | opcional; validado pelo modelo alimentar |
 | `treino` | opcional; parâmetros clínicos do treino, ver [treino.md](treino.md) |
+| `reavaliacao` | opcional; `{itens, datas}` pedido pela médica, ver "Pré-consulta e reavaliação" |
 
 `criadoEm` é escrito pelo editor, mas não recebe validação específica. IDs dos campos devem ser únicos entre metas/anotações. Tipos: checklist (`itens` strings), contador (`alvo` >= 0 e `unidade`), sim_nao, texto e escala (`min` <= `max`). Horários de lembretes em HH:MM.
 
@@ -67,7 +68,9 @@ Envelopes enviados pela paciente à profissional, `.plano`, **não são prescri�
 - **Reavaliação** — `formato: plano-de-cuidado-reavaliacao`, `versao: 1`, até 256 KB. `planoId`, `itens` (subconjunto não vazio e sem repetição de `medidas`, `sono`, `humor`) e `respostas` exatamente com as seções pedidas (`humor` → `emocional`).
 - Seções comuns: `medidas` `{peso 20–400 kg, altura 80–250 cm, cintura 30–300 cm, quadril 30–300 cm}`, cada uma número ou null. `sono` `{horas 0–24, restaurador, acordaNoite, acordaVezes 0–50, acordaMotivo, ronco, pausas}`; vezes e motivo só com `acordaNoite: "Sim"`. `emocional` `{phq2: [2], gad2: [2]}`, cada item 0–3 ou null.
 
-IMC (1 casa) e relação cintura-quadril (2 casas) são calculados na leitura, **só como número, sem classificação**. PHQ-2 e GAD-2 ficam como respostas, sem soma. O pedido de reavaliação dentro do `.plano` (`reavaliacao: {itens, datas}`) ainda não faz parte do contrato.
+IMC (1 casa) e relação cintura-quadril (2 casas) são calculados na leitura, **só como número, sem classificação**. PHQ-2 e GAD-2 ficam como respostas, sem soma. 
+
+**Pedido de reavaliação no `.plano`** — campo opcional `reavaliacao: {itens, datas}`, em qualquer versão do plano. `itens` segue a regra do envelope; `datas` tem de 1 a 12 dias `AAAA-MM-DD`, em ordem crescente, sem repetir, entre `inicio` e `retorno.data`. Chaves fora disso são recusadas. Sem o campo, a paciente não vê nada de reavaliação. Com ele, aparece o cartão **Reavaliação** em Hoje (e em Ajustes) e um lembrete local às 9h de cada data; datas até o último envio (config `reavaliacao_enviada_<planoId>`) não geram lembrete. A resposta é o envelope de reavaliação acima, com o `planoId` do plano. Clientes antigos ignoram o campo.
 
 ## Backup
 

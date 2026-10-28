@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'alimentacao.dart';
+import 'pre_consulta.dart';
 import 'treino.dart';
 
 /// Contract validator and date helpers shared by import, screens and tests.
@@ -33,6 +34,7 @@ class Plano {
       (data['metas'] as List? ?? const []).cast<Map<String, dynamic>>();
   List<Map<String, dynamic>> get camposDiarios =>
       (data['camposDiarios'] as List? ?? const []).cast<Map<String, dynamic>>();
+
   /// Bloco opcional de treino (ver `core/treino.dart`).
   PrescricaoTreino? get treino {
     final raw = data['treino'];
@@ -43,6 +45,15 @@ class Plano {
     final raw = data['alimentacao'];
     return raw is Map ? AlimentacaoPlano.fromMap(raw) : null;
   }
+
+  /// Pedido opcional de reavaliação (ver `core/pre_consulta.dart`).
+  PedidoReavaliacao? get reavaliacao => data['reavaliacao'] == null
+      ? null
+      : PedidoReavaliacao.fromMap(
+          data['reavaliacao'],
+          inicio: inicio,
+          retorno: retorno,
+        );
 
   static DateTime parseDia(String value) {
     final p = value.split('-');
@@ -232,6 +243,13 @@ class Plano {
       }
       if (decoded['treino'] != null) {
         PrescricaoTreino.validar(decoded['treino']);
+      }
+      if (decoded['reavaliacao'] != null) {
+        PedidoReavaliacao.fromMap(
+          decoded['reavaliacao'],
+          inicio: inicio,
+          retorno: retorno,
+        );
       }
       final semanal = decoded['envioSemanal'];
       if (semanal != null &&

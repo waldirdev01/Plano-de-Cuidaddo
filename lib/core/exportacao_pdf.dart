@@ -85,6 +85,8 @@ Plano planoDoPdfConferido(
     'secoes': copiarDados({'s': r.lista('secoes')})['s'],
     'pdf': copiarDados(r.data['pdf'] as Map<String, dynamic>),
     if (alimentacao != null) 'alimentacao': copiarDados(alimentacao),
+    if (r.data['reavaliacao'] != null)
+      'reavaliacao': copiarDados(r.data['reavaliacao'] as Map<String, dynamic>),
     if (r.data['treino'] != null)
       'treino': PrescricaoTreino.fromMap(r.data['treino'] as Map).toMap(),
     'origemPdf': {

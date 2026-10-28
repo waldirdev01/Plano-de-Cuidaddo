@@ -176,6 +176,47 @@ class _ConferenciaPdfPageState extends State<ConferenciaPdfPage> {
     });
   }
 
+  Future<void> _editarReavaliacao() async {
+    final DateTime inicio, retorno;
+    try {
+      inicio = Plano.parseDia(r.campos['inicio'] as String);
+      retorno = Plano.parseDia(r.campos['retorno'] as String);
+      if (retorno.isBefore(inicio)) throw const FormatException('');
+    } catch (_) {
+      _message(
+        context,
+        'Confira o início dos registros e o retorno antes de pedir a reavaliação.',
+      );
+      return;
+    }
+    final atual = r.data['reavaliacao'] as Map<String, dynamic>?;
+    final resultado =
+        await Navigator.push<({Map<String, dynamic>? reavaliacao})>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => EditorReavaliacaoPage(
+              nome: (r.campos['nome'] as String).isEmpty
+                  ? 'Paciente a conferir'
+                  : r.campos['nome'] as String,
+              inicio: inicio,
+              retorno: retorno,
+              inicial: atual,
+            ),
+          ),
+        );
+    if (resultado == null ||
+        jsonEncode(resultado.reavaliacao) == jsonEncode(atual)) {
+      return;
+    }
+    _alterar(() {
+      if (resultado.reavaliacao == null) {
+        r.data.remove('reavaliacao');
+      } else {
+        r.data['reavaliacao'] = resultado.reavaliacao;
+      }
+    });
+  }
+
   Future<void> _editarTreino() async {
     final atual = r.data['treino'] as Map<String, dynamic>?;
     final resultado = await Navigator.push<({Map<String, dynamic>? treino})>(
@@ -629,6 +670,17 @@ class _ConferenciaPdfPageState extends State<ConferenciaPdfPage> {
                     subtitle: Text(_resumoAlimentacao()),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: saving ? null : _editarAlimentacao,
+                  ),
+                ),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.event_repeat_outlined),
+                    title: const Text('Reavaliação'),
+                    subtitle: Text(
+                      _resumoPedidoReavaliacao(r.data['reavaliacao']),
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: saving ? null : _editarReavaliacao,
                   ),
                 ),
                 Card(

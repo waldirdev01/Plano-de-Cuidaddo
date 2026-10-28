@@ -17,8 +17,9 @@
 | `core/padrao_pdf.dart` | Contrato explícito PLANO-CUIDADO/1, blocos, campos e validações determinísticas |
 | `core/exportacao_pdf.dart` | Converte somente o rascunho conferido em plano v4, mantendo IDs e sem calcular nutrientes |
 | `ui/importacao_pdf.dart` | Conferência profissional, decisões, consulta do PDF original e salvamento isolado |
-| `ui/pre_consulta.dart` | Pré-consulta da paciente: etapas, rascunho local e exportação |
-| `ui/pacientes.dart` | Médica: receber pré-consulta/reavaliação, lista de pacientes e ficha com histórico |
+| `ui/pre_consulta.dart` | Pré-consulta e reavaliação da paciente (mesma tela, dois modos): etapas, rascunho local e exportação |
+| `ui/pacientes.dart` | Médica: receber pré-consulta/reavaliação, lista de pacientes, ficha com histórico e "Criar plano para esta paciente" |
+| `ui/reavaliacao.dart` | Médica: pedir reavaliação (itens e datas) no editor e na conferência do PDF. Paciente: cartão Reavaliação em Hoje |
 | `ui/app.dart` | Entrada, Hoje, Semana, PDF, compartilhamento e ajustes |
 | `ui/profissional.dart` | Perfil, editor, exportação e prévia |
 | `ui/paciente.dart` | Cadastro e máscara do nascimento |

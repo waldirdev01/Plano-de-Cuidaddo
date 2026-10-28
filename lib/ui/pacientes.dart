@@ -386,6 +386,31 @@ class _FichaPacientePageState extends State<FichaPacientePage> {
     }
   }
 
+  /// New plan with this patient's identity already filled in.
+  Future<void> _criarPlano() async {
+    final db = Armazenamento.instance;
+    final nome = await db.config('profissional_nome') ?? '';
+    final registro = await db.config('profissional_registro') ?? '';
+    if (!mounted) return;
+    if (nome.trim().isEmpty || registro.trim().isEmpty) {
+      _message(
+        context,
+        'Complete seu nome e registro no perfil profissional, em Meus planos, antes de criar um plano.',
+      );
+      return;
+    }
+    final data = novoPlano(nome, registro)
+      ..['paciente'] = {
+        'nome': ficha?.nome ?? widget.nome,
+        'nascimento': widget.nascimento,
+      };
+    await Navigator.push(
+      context,
+      MaterialPageRoute<void>(builder: (_) => EditorPlanoPage(data: data)),
+    );
+    await _load();
+  }
+
   int _idade(DateTime nascimento) {
     final hoje = DateTime.now();
     var anos = hoje.year - nascimento.year;
@@ -463,6 +488,16 @@ class _FichaPacientePageState extends State<FichaPacientePage> {
                 Text(
                   'Nascimento: ${DateFormat('dd/MM/yyyy').format(nascimento)} · ${_idade(nascimento)} anos',
                   style: const TextStyle(fontSize: 17),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: _criarPlano,
+                  icon: const Icon(Icons.add),
+                  label: const Text('Criar plano para esta paciente'),
+                ),
+                const Text(
+                  'Nome e nascimento já vêm preenchidos. Para um plano em PDF, use Importar PDF do plano em Meus planos.',
+                  style: TextStyle(color: apoio),
                 ),
                 const SizedBox(height: 12),
                 if (f != null) _evolucao(f.medidas),

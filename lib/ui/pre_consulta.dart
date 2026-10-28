@@ -10,15 +10,27 @@ Future<void> _abrirPreConsulta(BuildContext context) => Navigator.push(
   MaterialPageRoute<void>(builder: (_) => const PreConsultaPage()),
 );
 
+Future<void> _abrirReavaliacao(BuildContext context, Plano plano) =>
+    Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => PreConsultaPage.reavaliacao(plano: plano),
+      ),
+    );
+
+/// Same page in two modes: the full pre-consultation, or the reassessment the
+/// physician requested in [plano] (only the requested items, no consent step).
 class PreConsultaPage extends StatefulWidget {
-  const PreConsultaPage({super.key});
+  const PreConsultaPage({super.key}) : plano = null;
+  const PreConsultaPage.reavaliacao({super.key, required Plano this.plano});
+  final Plano? plano;
   @override
   State<PreConsultaPage> createState() => _PreConsultaPageState();
 }
 
 class _PreConsultaPageState extends State<PreConsultaPage> {
   PerfilPaciente? perfil;
-  Map<String, dynamic> r = PreConsulta.respostasVazias();
+  late Map<String, dynamic> r = _vazias();
   DateTime? termoAceitoEm;
   int etapa = 0;
   bool loading = true, busy = false;
@@ -53,12 +65,33 @@ class _PreConsultaPageState extends State<PreConsultaPage> {
     'revisao': 'Revisar e enviar',
   };
 
+  static const _titulosReavaliacao = {
+    'reav': 'Reavaliação',
+    'medidas': 'Suas medidas',
+    'sono': 'Sono',
+    'humor': 'Humor',
+    'revisao': 'Revisar e enviar',
+  };
+
+  PedidoReavaliacao? get _pedido => widget.plano?.reavaliacao;
+  bool get _reav => widget.plano != null;
+
+  /// The reassessment has no consent step: it continues the same care.
+  bool get _liberado => _reav || termoAceitoEm != null;
+  String get _chaveRascunho => _reav
+      ? 'reavaliacao_rascunho_${widget.plano!.id}'
+      : _chaveRascunhoPreConsulta;
+  Map<String, dynamic> _vazias() =>
+      _reav ? _pedido!.respostasVazias() : PreConsulta.respostasVazias();
+
   Map<String, dynamic> _secao(String s) => r[s] as Map<String, dynamic>;
   bool get _feminino => _secao('ident')['sexo'] == 'F';
-  List<String> get _visiveis => [
-    for (final e in _etapas)
-      if (e != 'hormonal' || _feminino) e,
-  ];
+  List<String> get _visiveis => _reav
+      ? ['reav', for (final i in _pedido!.itens) i, 'revisao']
+      : [
+          for (final e in _etapas)
+            if (e != 'hormonal' || _feminino) e,
+        ];
   String get _atual => _visiveis[etapa.clamp(0, _visiveis.length - 1)];
 
   @override
@@ -87,8 +120,12 @@ class _PreConsultaPageState extends State<PreConsultaPage> {
     final p = await db.perfilPaciente();
     Map<String, dynamic>? rascunho;
     try {
-      final raw = await db.config(_chaveRascunhoPreConsulta);
-      if (raw != null && p != null) {
+      final raw = await db.config(_chaveRascunho);
+      if (raw != null && p != null && _reav) {
+        final d = jsonDecode(raw) as Map<String, dynamic>;
+        _criarReavaliacao(p, d['respostas'] as Map<String, dynamic>);
+        rascunho = {'respostas': d['respostas'], 'etapa': d['etapa'] as int};
+      } else if (raw != null && p != null) {
         final d = jsonDecode(raw) as Map<String, dynamic>;
         final aceito = d['termoAceitoEm'] == null
             ? null
@@ -123,7 +160,7 @@ class _PreConsultaPageState extends State<PreConsultaPage> {
     if (pendente != null) return;
     try {
       await Armazenamento.instance.setConfig(
-        _chaveRascunhoPreConsulta,
+        _chaveRascunho,
         jsonEncode({
           'respostas': r,
           'etapa': etapa,
@@ -155,7 +192,7 @@ class _PreConsultaPageState extends State<PreConsultaPage> {
     setState(() {
       r = jsonDecode(jsonEncode(p['respostas'])) as Map<String, dynamic>;
       termoAceitoEm = p['termoAceitoEm'] as DateTime?;
-      etapa = termoAceitoEm == null ? 0 : p['etapa'] as int;
+      etapa = _liberado ? p['etapa'] as int : 0;
       pendente = null;
     });
     _salvar();
@@ -164,12 +201,12 @@ class _PreConsultaPageState extends State<PreConsultaPage> {
   Future<void> _comecarDoZero() async {
     _limparControllers();
     setState(() {
-      r = PreConsulta.respostasVazias();
+      r = _vazias();
       termoAceitoEm = null;
       etapa = 0;
       pendente = null;
     });
-    await Armazenamento.instance.removerConfig(_chaveRascunhoPreConsulta);
+    await Armazenamento.instance.removerConfig(_chaveRascunho);
   }
 
   void _irPara(int nova) {
@@ -491,29 +528,30 @@ class _PreConsultaPageState extends State<PreConsultaPage> {
 
   // ---------- steps ----------
 
-  List<Widget> _intro() => [
-    if (pendente != null)
-      _aviso(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text(
-              'Você já começou este formulário neste aparelho. Quer continuar de onde parou ou começar do zero?',
-              style: TextStyle(fontSize: 17),
-            ),
-            const SizedBox(height: 10),
-            FilledButton(
-              onPressed: _continuarRascunho,
-              child: const Text('Continuar de onde parei'),
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton(
-              onPressed: _comecarDoZero,
-              child: const Text('Começar do zero'),
-            ),
-          ],
+  Widget _cartaoRascunho() => _aviso(
+    Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'Você já começou este formulário neste aparelho. Quer continuar de onde parou ou começar do zero?',
+          style: TextStyle(fontSize: 17),
         ),
-      ),
+        const SizedBox(height: 10),
+        FilledButton(
+          onPressed: _continuarRascunho,
+          child: const Text('Continuar de onde parei'),
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton(
+          onPressed: _comecarDoZero,
+          child: const Text('Começar do zero'),
+        ),
+      ],
+    ),
+  );
+
+  List<Widget> _intro() => [
+    if (pendente != null) _cartaoRascunho(),
     Text(
       'Vamos adiantar parte da sua consulta',
       style: Theme.of(context).textTheme.headlineSmall,
@@ -800,8 +838,9 @@ class _PreConsultaPageState extends State<PreConsultaPage> {
     ];
   }
 
-  List<Widget> _sonoHumor() => [
-    _grupo('Sono'),
+  List<Widget> _sonoHumor() => [_grupo('Sono'), ..._sono(), ..._humor()];
+
+  List<Widget> _sono() => [
     _numero(
       'sono',
       'horas',
@@ -846,6 +885,9 @@ class _PreConsultaPageState extends State<PreConsultaPage> {
       'Alguém já percebeu você parar de respirar dormindo?',
       simNaoNaoSei,
     ),
+  ];
+
+  List<Widget> _humor() => [
     _grupo(
       'Estresse e humor',
       sub:
@@ -926,6 +968,108 @@ class _PreConsultaPageState extends State<PreConsultaPage> {
     ];
   }
 
+  List<Widget> _intrReavaliacao() {
+    final pedido = _pedido!;
+    final hoje = DateTime.now();
+    final proxima = pedido.datas
+        .map(Plano.parseDia)
+        .where((d) => !d.isBefore(DateTime(hoje.year, hoje.month, hoje.day)))
+        .firstOrNull;
+    return [
+      if (pendente != null) _cartaoRascunho(),
+      Text(
+        'A médica pediu uma reavaliação',
+        style: Theme.of(context).textTheme.headlineSmall,
+      ),
+      const SizedBox(height: 8),
+      const Text(
+        'Responda só o que ela pediu. No fim, envie o arquivo para ela pelo e-mail ou pelo app que você preferir. O que você já respondeu fica salvo neste aparelho.',
+        style: TextStyle(fontSize: 17),
+      ),
+      _grupo('O que atualizar'),
+      for (final i in pedido.itens)
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.check_circle_outline, color: verde),
+          title: Text(PedidoReavaliacao.nomesItens[i]!),
+        ),
+      _grupo('Datas combinadas'),
+      Text(
+        pedido.datas
+            .map((d) => DateFormat('dd/MM/yyyy').format(Plano.parseDia(d)))
+            .join(' · '),
+      ),
+      if (proxima != null)
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(
+            'Próxima: ${DateFormat('dd/MM/yyyy').format(proxima)}. Pode responder antes ou depois do dia, se precisar.',
+            style: const TextStyle(color: apoio),
+          ),
+        ),
+    ];
+  }
+
+  List<Widget> _revisaoReavaliacao() {
+    final medidas = r['medidas'] as Map<String, dynamic>?;
+    return [
+      const Text(
+        'Quando estiver tudo certo, envie a reavaliação à médica.',
+        style: TextStyle(fontSize: 17),
+      ),
+      if (medidas != null) ...[
+        _grupo('Medidas'),
+        Text(
+          '${medidas.values.where((v) => v != null).length} de 4 preenchidas',
+        ),
+      ],
+      const SizedBox(height: 16),
+      ..._botoesEnvio(),
+    ];
+  }
+
+  List<Widget> _botoesEnvio() => [
+    if (emailDisponivel) ...[
+      FilledButton.icon(
+        onPressed: busy ? null : _enviarEmail,
+        icon: const Icon(Icons.mail_outline),
+        label: Text(busy ? 'Preparando…' : 'Enviar por e-mail para a médica'),
+      ),
+      const SizedBox(height: 4),
+      const Text(
+        'Abre o e-mail com o endereço do consultório ($emailConsultorio), o resumo das respostas e o arquivo anexado. Só a médica lê esse e-mail.',
+        style: TextStyle(color: apoio),
+      ),
+      const SizedBox(height: 12),
+    ],
+    OutlinedButton.icon(
+      onPressed: busy ? null : _exportar,
+      icon: const Icon(Icons.ios_share),
+      label: const Text('Compartilhar arquivo (WhatsApp e outros)'),
+    ),
+    const SizedBox(height: 8),
+    const Text(
+      'O arquivo contém seus dados de saúde. Envie somente à médica. Salvar em Arquivos não é enviar.',
+      style: TextStyle(color: apoio),
+    ),
+    const SizedBox(height: 16),
+    _aviso(
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Este aparelho não é só seu? Depois de enviar, apague as suas respostas daqui.',
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton(
+            onPressed: busy ? null : _apagar,
+            child: const Text('Apagar minhas respostas deste aparelho'),
+          ),
+        ],
+      ),
+    ),
+  ];
+
   List<Widget> _revisao() {
     final ident = _secao('ident');
     final medidas = _secao('medidas');
@@ -964,74 +1108,75 @@ class _PreConsultaPageState extends State<PreConsultaPage> {
       linha('Condições', condicoes == 0 ? 'nenhuma' : '$condicoes marcada(s)'),
       linha('Medidas', '$preenchidas de 4 preenchidas'),
       const SizedBox(height: 16),
-      if (emailDisponivel) ...[
-        FilledButton.icon(
-          onPressed: busy ? null : _enviarEmail,
-          icon: const Icon(Icons.mail_outline),
-          label: Text(busy ? 'Preparando…' : 'Enviar por e-mail para a médica'),
-        ),
-        const SizedBox(height: 4),
-        const Text(
-          'Abre o e-mail com o endereço do consultório ($emailConsultorio), o resumo das respostas e o arquivo anexado. Só a médica lê esse e-mail.',
-          style: TextStyle(color: apoio),
-        ),
-        const SizedBox(height: 12),
-      ],
-      OutlinedButton.icon(
-        onPressed: busy ? null : _exportar,
-        icon: const Icon(Icons.ios_share),
-        label: const Text('Compartilhar arquivo (WhatsApp e outros)'),
-      ),
-      const SizedBox(height: 8),
-      const Text(
-        'O arquivo contém seus dados de saúde. Envie somente à médica. Salvar em Arquivos não é enviar.',
-        style: TextStyle(color: apoio),
-      ),
-      const SizedBox(height: 16),
-      _aviso(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text(
-              'Este aparelho não é só seu? Depois de enviar, apague as suas respostas daqui.',
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton(
-              onPressed: busy ? null : _apagar,
-              child: const Text('Apagar minhas respostas deste aparelho'),
-            ),
-          ],
-        ),
-      ),
+      ..._botoesEnvio(),
     ];
   }
 
   // ---------- export ----------
 
-  Future<(PreConsulta, File)> _prepararArquivo() async {
-    final p = PreConsulta.criar(perfil!, r, termoAceitoEm: termoAceitoEm!);
+  Reavaliacao _criarReavaliacao(
+    PerfilPaciente p,
+    Map<String, dynamic> respostas,
+  ) => Reavaliacao.criar(
+    p,
+    planoId: widget.plano!.id,
+    itens: _pedido!.itens,
+    respostas: respostas,
+  );
+
+  String get _nomeEnvio => _reav ? 'Reavaliação' : 'Pré-consulta';
+
+  /// The file and the readable summary that goes in the e-mail body.
+  Future<(String, File)> _prepararArquivo() async {
+    final String nome, resumo;
+    final Map<String, dynamic> dados;
+    if (_reav) {
+      final a = _criarReavaliacao(perfil!, r);
+      (nome, resumo, dados) = (
+        nomeArquivoReavaliacao(a),
+        resumoReavaliacao(a),
+        a.data,
+      );
+    } else {
+      final p = PreConsulta.criar(perfil!, r, termoAceitoEm: termoAceitoEm!);
+      (nome, resumo, dados) = (
+        nomeArquivoPreConsulta(p),
+        resumoPreConsulta(p),
+        p.data,
+      );
+    }
     final dir = await getTemporaryDirectory();
-    final file = File('${dir.path}/${nomeArquivoPreConsulta(p)}');
-    await file.writeAsString(jsonEncode(p.data), flush: true);
-    return (p, file);
+    final file = File('${dir.path}/$nome');
+    await file.writeAsString(jsonEncode(dados), flush: true);
+    return (resumo, file);
   }
 
-  Future<void> _registrarEnvio() => Armazenamento.instance.setConfig(
-    'pre_consulta_enviada_em',
-    DateTime.now().toIso8601String(),
-  );
+  Future<void> _registrarEnvio() async {
+    await Armazenamento.instance.setConfig(
+      _reav
+          ? chaveReavaliacaoEnviada(widget.plano!.id)
+          : 'pre_consulta_enviada_em',
+      DateTime.now().toIso8601String(),
+    );
+    // A sent reassessment silences the reminders of its past dates.
+    if (_reav && await Armazenamento.instance.config('lembretes') != 'nao') {
+      try {
+        await Lembretes.instance.reagendar(widget.plano);
+      } catch (_) {}
+    }
+  }
 
   /// The composer reports Send itself, so no declaration is asked here.
   Future<void> _enviarEmail() async {
     setState(() => busy = true);
     try {
-      final (p, file) = await _prepararArquivo();
+      final (resumo, file) = await _prepararArquivo();
       // Readable summary in the body; the attachment is for the app.
       final status = await canalEmail.invokeMethod<String>('enviar', {
         'para': emailConsultorio,
-        'assunto': 'Pré-consulta de ${perfil!.nome}',
+        'assunto': '$_nomeEnvio de ${perfil!.nome}',
         'corpo':
-            'Segue a minha pré-consulta. O arquivo anexo abre no Plano de Cuidado, no modo profissional.\n\n${resumoPreConsulta(p)}',
+            'Segue a minha ${_nomeEnvio.toLowerCase()}. O arquivo anexo abre no Plano de Cuidado, no modo profissional.\n\n$resumo',
         'arquivo': file.path,
       });
       if (!mounted) return;
@@ -1077,9 +1222,9 @@ class _PreConsultaPageState extends State<PreConsultaPage> {
       final result = await SharePlus.instance.share(
         ShareParams(
           files: [XFile(file.path, mimeType: 'application/json')],
-          subject: 'Pré-consulta de ${perfil!.nome}',
+          subject: '$_nomeEnvio de ${perfil!.nome}',
           text:
-              'Pré-consulta de ${perfil!.nome}. Abrir no modo profissional do Plano de Cuidado atualizado.',
+              '$_nomeEnvio de ${perfil!.nome}. Abrir no modo profissional do Plano de Cuidado atualizado.',
           sharePositionOrigin: box == null
               ? null
               : box.localToGlobal(Offset.zero) & box.size,
@@ -1130,7 +1275,7 @@ class _PreConsultaPageState extends State<PreConsultaPage> {
       builder: (ctx) => AlertDialog(
         title: const Text('Apagar as suas respostas?'),
         content: const Text(
-          'Apaga a pré-consulta deste aparelho. O que você já enviou à médica não é afetado.',
+          'Apaga as respostas deste aparelho. O que você já enviou à médica não é afetado.',
         ),
         actions: [
           TextButton(
@@ -1156,22 +1301,26 @@ class _PreConsultaPageState extends State<PreConsultaPage> {
     }
     if (perfil == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Pré-consulta')),
+        appBar: AppBar(title: Text(_nomeEnvio)),
         body: const Padding(
           padding: EdgeInsets.all(24),
           child: Text(
-            'Faça seu cadastro (nome completo e nascimento) em Ajustes antes da pré-consulta.',
+            'Faça seu cadastro (nome completo e nascimento) em Ajustes antes de responder.',
             style: TextStyle(fontSize: 18),
           ),
         ),
       );
     }
     final visiveis = _visiveis;
-    if (termoAceitoEm == null) etapa = 0;
+    if (!_liberado) etapa = 0;
     etapa = etapa.clamp(0, visiveis.length - 1);
     final atual = _atual;
     final ultima = etapa == visiveis.length - 1;
     final conteudo = switch (atual) {
+      'reav' => _intrReavaliacao(),
+      'sono' => _sono(),
+      'humor' => _humor(),
+      'revisao' when _reav => _revisaoReavaliacao(),
       'intro' => _intro(),
       'ident' => _ident(),
       'saude' => _saude(),
@@ -1183,7 +1332,7 @@ class _PreConsultaPageState extends State<PreConsultaPage> {
     };
     return Scaffold(
       appBar: AppBar(
-        title: Text(_titulos[atual]!),
+        title: Text((_reav ? _titulosReavaliacao : _titulos)[atual]!),
         actions: [
           Center(
             child: Padding(
@@ -1228,7 +1377,7 @@ class _PreConsultaPageState extends State<PreConsultaPage> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: FilledButton(
-                    onPressed: pendente != null || termoAceitoEm == null
+                    onPressed: pendente != null || !_liberado
                         ? null
                         : () => _irPara(etapa + 1),
                     child: const Text('Continuar'),
@@ -1241,6 +1390,13 @@ class _PreConsultaPageState extends State<PreConsultaPage> {
       ),
     );
   }
+}
+
+String nomeArquivoReavaliacao(Reavaliacao a) {
+  final nome = PerfilPaciente.normalizarNome(
+    a.nomePaciente,
+  ).replaceAll(RegExp(r'[^a-z0-9]+'), '-');
+  return 'reavaliacao-$nome-${Plano.formatDia(a.criadoEm)}.plano';
 }
 
 String nomeArquivoPreConsulta(PreConsulta p) {

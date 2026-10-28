@@ -1945,4 +1945,269 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   });
+
+  group('reavaliação e etapa 4', () {
+    final ana = PerfilPaciente(
+      nome: 'Ana Exemplo Completo',
+      nascimento: '1990-01-01',
+    );
+    DateTime hoje() {
+      final n = DateTime.now();
+      return DateTime(n.year, n.month, n.day);
+    }
+
+    Plano planoComReavaliacao(List<String> itens, List<DateTime> datas) {
+      final d = novoPlano('Médica Exemplo', 'CRM TESTE');
+      d['paciente'] = ana.toJson();
+      d['inicio'] = Plano.formatDia(hoje().subtract(const Duration(days: 14)));
+      d['retorno'] = {
+        'data': Plano.formatDia(hoje().add(const Duration(days: 14))),
+        'hora': '13:30',
+      };
+      d['reavaliacao'] = {
+        'itens': itens,
+        'datas': datas.map(Plano.formatDia).toList(),
+      };
+      return Plano.parse(jsonEncode(d));
+    }
+
+    Future<void> continuar(WidgetTester tester) =>
+        tap(tester, find.widgetWithText(FilledButton, 'Continuar'));
+
+    setUp(() {
+      final rascunhos = Directory('${dir.path}/rascunhos_pdf');
+      if (rascunhos.existsSync()) rascunhos.deleteSync(recursive: true);
+    });
+
+    testWidgets('paciente responde só o que a médica pediu e envia', (
+      tester,
+    ) async {
+      final plano = planoComReavaliacao(['medidas', 'sono'], [hoje()]);
+      await tester.runAsync(
+        () => Armazenamento.instance.salvarPerfilPaciente(ana),
+      );
+      await pump(tester, HojePage(plano: plano, refresh: () async {}));
+      expect(
+        find.text('Já está no dia. Responda e envie à médica.'),
+        findsOneWidget,
+      );
+      await tester.ensureVisible(find.text('Fazer a reavaliação'));
+      await tester.tap(find.text('Fazer a reavaliação'));
+      for (var i = 0; i < 30 && find.text('1 / 4').evaluate().isEmpty; i++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 60)),
+        );
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      expect(find.text('1 / 4'), findsOneWidget);
+      expect(find.text('A médica pediu uma reavaliação'), findsOneWidget);
+      expect(
+        find.text('Li e concordo com o termo de consentimento.'),
+        findsNothing,
+      );
+      await continuar(tester);
+      expect(find.text('Suas medidas'), findsOneWidget);
+      await tester.enterText(label('Peso (kg)'), '70,5');
+      await tester.pumpAndSettle();
+      await continuar(tester);
+      expect(find.text('Sono'), findsWidgets);
+      expect(find.text('Estresse e humor'), findsNothing);
+      await tap(tester, find.text('Parcialmente'));
+      await continuar(tester);
+      expect(find.text('4 / 4'), findsOneWidget);
+      await tap(tester, find.text('Compartilhar arquivo (WhatsApp e outros)'));
+      expect(shared.single, contains('reavaliacao-ana-exemplo-completo-'));
+      final a = Reavaliacao.parse(File(shared.single).readAsStringSync());
+      expect(a.planoId, plano.id);
+      expect(a.itens, ['medidas', 'sono']);
+      expect(a.medidas!['peso'], 70.5);
+      expect(a.respostas['sono']['restaurador'], 'Parcialmente');
+      await tap(tester, find.text('Já enviei à médica'));
+      expect(
+        await tester.runAsync(
+          () =>
+              Armazenamento.instance.config(chaveReavaliacaoEnviada(plano.id)),
+        ),
+        isNotNull,
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('plano sem pedido não mostra reavaliação', (tester) async {
+      final d = novoPlano('Médica Exemplo', 'CRM TESTE');
+      d['paciente'] = ana.toJson();
+      await pump(
+        tester,
+        HojePage(plano: Plano.parse(jsonEncode(d)), refresh: () async {}),
+      );
+      expect(find.text('Fazer a reavaliação'), findsNothing);
+    });
+
+    test('lembrete às 9h nas datas pedidas, menos as já respondidas', () async {
+      final calls = <MethodCall>[];
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      const channel = MethodChannel(
+        'dexterous.com/flutter/local_notifications',
+      );
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        return true;
+      });
+      try {
+        final amanha = hoje().add(const Duration(days: 1));
+        final depois = hoje().add(const Duration(days: 5));
+        final plano = planoComReavaliacao(['humor'], [amanha, depois]);
+        List<DateTime> agendados() => calls
+            .where(
+              (c) =>
+                  c.method == 'zonedSchedule' &&
+                  (c.arguments as Map)['title'] == 'Reavaliação',
+            )
+            .map(
+              (c) => DateTime.parse(
+                (c.arguments as Map)['scheduledDateTime'] as String,
+              ),
+            )
+            .toList();
+        await Lembretes.instance.reagendar(plano);
+        expect(agendados(), [
+          amanha.add(const Duration(hours: 9)),
+          depois.add(const Duration(hours: 9)),
+        ]);
+        calls.clear();
+        await Armazenamento.instance.setConfig(
+          chaveReavaliacaoEnviada(plano.id),
+          amanha.add(const Duration(hours: 10)).toIso8601String(),
+        );
+        await Lembretes.instance.reagendar(plano);
+        expect(agendados(), [depois.add(const Duration(hours: 9))]);
+      } finally {
+        messenger.setMockMethodCallHandler(channel, (_) async => true);
+      }
+    });
+
+    testWidgets('médica pede a reavaliação na conferência do PDF', (
+      tester,
+    ) async {
+      final store = ArquivosRascunhoPdf(
+        diretorio: Directory('${dir.path}/pdf-reavaliacao'),
+      );
+      await pump(
+        tester,
+        ConferenciaPdfPage(rascunho: rascunhoConferido(), arquivos: store),
+      );
+      await tap(tester, find.text('Não pedida. Toque para pedir.'));
+      await tap(tester, find.text('Pedir reavaliação a esta paciente'));
+      await tap(tester, find.text('Aplicar'));
+      expect(
+        find.text('Marque ao menos um item para atualizar.'),
+        findsOneWidget,
+      );
+      tester
+          .state<ScaffoldMessengerState>(find.byType(ScaffoldMessenger))
+          .hideCurrentSnackBar();
+      await tester.pumpAndSettle();
+      await tap(tester, find.text('Medidas (peso, altura, cintura e quadril)'));
+      await tap(tester, find.text('Sugerir a cada 2 semanas'));
+      await tap(tester, find.text('Aplicar'));
+      expect(find.textContaining('Pedida: medidas · '), findsOneWidget);
+      for (final title in [
+        'Conferi o destinatário, o nome completo e o nascimento.',
+        'Conferi o período, retorno, envio e horários propostos.',
+        'Conferi a fidelidade das metas, refeições e textos e registrei as decisões necessárias.',
+      ]) {
+        await tap(tester, find.text(title));
+      }
+      await tap(tester, find.text('Concluir conferência'));
+      final saved = (await tester.runAsync(store.listar))!.single;
+      final plano = planoDoPdfConferido(
+        saved,
+        profissional: 'Médica Exemplo',
+        registro: 'CRM TESTE',
+      );
+      expect(plano.reavaliacao!.itens, ['medidas']);
+      expect(plano.reavaliacao!.datas, isNotEmpty);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('ficha cria plano com a identidade da paciente', (
+      tester,
+    ) async {
+      await tester.runAsync(() async {
+        final db = Armazenamento.instance;
+        await db.setConfig('profissional_nome', 'Médica Exemplo');
+        await db.setConfig('profissional_registro', 'CRM TESTE');
+        await db.guardarPreConsulta(
+          PreConsulta.criar(
+            ana,
+            PreConsulta.respostasVazias(),
+            termoAceitoEm: DateTime.now(),
+          ),
+        );
+      });
+      await pump(
+        tester,
+        const FichaPacientePage(
+          nome: 'Ana Exemplo Completo',
+          nascimento: '1990-01-01',
+        ),
+      );
+      await tap(tester, find.text('Criar plano para esta paciente'));
+      expect(
+        find.widgetWithText(TextFormField, 'Ana Exemplo Completo'),
+        findsOneWidget,
+      );
+      expect(find.widgetWithText(TextFormField, '01/01/1990'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('aviso de backup some depois da cópia', (tester) async {
+      await tester.runAsync(() async {
+        final db = Armazenamento.instance;
+        await db.setConfig('profissional_nome', 'Médica Exemplo');
+        await db.setConfig('profissional_registro', 'CRM TESTE');
+      });
+      await pump(tester, ProfissionalPage(refresh: () async {}));
+      expect(find.text('Faça uma cópia de segurança'), findsNothing);
+      await tester.runAsync(
+        () => Armazenamento.instance.guardarPreConsulta(
+          PreConsulta.criar(
+            ana,
+            PreConsulta.respostasVazias(),
+            termoAceitoEm: DateTime.now(),
+          ),
+        ),
+      );
+      await pump(
+        tester,
+        ProfissionalPage(
+          key: const ValueKey('com-ficha'),
+          refresh: () async {},
+        ),
+      );
+      expect(find.text('Faça uma cópia de segurança'), findsOneWidget);
+      expect(
+        find.textContaining('Você ainda não fez nenhuma cópia.'),
+        findsOneWidget,
+      );
+      await tap(tester, find.text('Fazer cópia agora'));
+      for (var i = 0; i < 20 && shared.isEmpty; i++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 60)),
+        );
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      for (var i = 0; i < 10; i++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 60)),
+        );
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      await tester.pumpAndSettle();
+      expect(shared.single, endsWith('.plano-backup'));
+      expect(find.text('Faça uma cópia de segurança'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  });
 }

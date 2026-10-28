@@ -623,6 +623,82 @@ class Reavaliacao {
   }
 }
 
+/// Config key with the instant the patient last sent a reassessment.
+String chaveReavaliacaoEnviada(String planoId) =>
+    'reavaliacao_enviada_$planoId';
+
+/// Reassessment requested by the physician inside the `.plano`: what the
+/// patient updates and on which days. Without it the patient sees nothing.
+class PedidoReavaliacao {
+  const PedidoReavaliacao({required this.itens, required this.datas});
+  final List<String> itens;
+
+  /// AAAA-MM-DD, ascending, between the plan start and the return visit.
+  final List<String> datas;
+  static const maxDatas = 12;
+
+  static const nomesItens = {
+    'medidas': 'Medidas (peso, altura, cintura e quadril)',
+    'sono': 'Sono',
+    'humor': 'Humor (estresse e ansiedade)',
+  };
+
+  static String nomeCurto(String item) => switch (item) {
+    'medidas' => 'as medidas',
+    'sono' => 'o sono',
+    _ => 'o humor',
+  };
+
+  Map<String, dynamic> toMap() => {'itens': itens, 'datas': datas};
+
+  /// Empty answers for the requested items, keyed like [Reavaliacao.respostas].
+  Map<String, dynamic> respostasVazias() => {
+    for (final i in itens)
+      Reavaliacao.secaoDoItem[i]!: switch (i) {
+        'medidas' => medidasVazias(),
+        'sono' => sonoVazio(),
+        _ => emocionalVazio(),
+      },
+  };
+
+  static PedidoReavaliacao fromMap(
+    Object? raw, {
+    required DateTime inicio,
+    required DateTime retorno,
+  }) {
+    try {
+      final m = raw as Map<String, dynamic>;
+      _chaves(m, {'itens', 'datas'});
+      final itens = (m['itens'] as List).cast<String>().toList();
+      validarItensReavaliacao(itens);
+      final datas = (m['datas'] as List).cast<String>().toList();
+      if (datas.isEmpty || datas.length > maxDatas) {
+        throw const FormatException('A reavaliação precisa de 1 a 12 datas.');
+      }
+      DateTime? anterior;
+      for (final d in datas) {
+        final dia = Plano.parseDia(d);
+        if (dia.isBefore(inicio) || dia.isAfter(retorno)) {
+          throw const FormatException(
+            'As datas da reavaliação devem ficar entre o início do plano e o retorno.',
+          );
+        }
+        if (anterior != null && !dia.isAfter(anterior)) {
+          throw const FormatException(
+            'As datas da reavaliação devem estar em ordem, sem repetir.',
+          );
+        }
+        anterior = dia;
+      }
+      return PedidoReavaliacao(itens: itens, datas: datas);
+    } on FormatException {
+      rethrow;
+    } catch (_) {
+      throw const FormatException('O pedido de reavaliação está inválido.');
+    }
+  }
+}
+
 Map<String, dynamic> medidasVazias() => <String, dynamic>{
   'peso': null,
   'altura': null,

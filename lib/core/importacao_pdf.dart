@@ -8,6 +8,7 @@ import 'alimentacao.dart';
 import 'edicao_plano.dart';
 import 'plano.dart';
 import 'padrao_pdf.dart';
+import 'pre_consulta.dart';
 import 'treino.dart';
 
 const canalLeituraPdf = MethodChannel('br.com.waldirdev01.plano_cuidado/pdf');
@@ -79,6 +80,23 @@ class RascunhoPdf {
             'Confira a data de ${key == 'consulta' ? 'consulta' : 'emissão'}.',
           );
         }
+      }
+    }
+    if (data['reavaliacao'] != null) {
+      try {
+        PedidoReavaliacao.fromMap(
+          data['reavaliacao'],
+          inicio: Plano.parseDia(campos['inicio'] as String),
+          retorno: Plano.parseDia(campos['retorno'] as String),
+        );
+      } on FormatException catch (e) {
+        errors.add(
+          e.message.startsWith('As datas')
+              ? e.message
+              : 'Confira o pedido de reavaliação.',
+        );
+      } catch (_) {
+        errors.add('Confira o pedido de reavaliação.');
       }
     }
     final link = (campos['link'] as String).trim();
@@ -388,6 +406,14 @@ class ArquivosRascunhoPdf {
         throw const FormatException('Rotina alimentar danificada no rascunho.');
       }
       AlimentacaoPlano.fromMap(alimentacao);
+    }
+    // Dates are checked against the plan period in validarConferencia.
+    if (r.data['reavaliacao'] != null) {
+      PedidoReavaliacao.fromMap(
+        r.data['reavaliacao'],
+        inicio: DateTime(1900),
+        retorno: DateTime(9999),
+      );
     }
     final checks = r.data['confirmacoes'] as Map;
     if ([

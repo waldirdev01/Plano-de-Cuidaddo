@@ -17,6 +17,43 @@ const _tiposCampos = {
   'escala': 'Escala de notas',
 };
 
+class _AvisoBackup extends StatelessWidget {
+  const _AvisoBackup({required this.ultimo, required this.onFeito});
+  final DateTime? ultimo;
+  final VoidCallback onFeito;
+  @override
+  Widget build(BuildContext context) {
+    final dias = ultimo == null
+        ? null
+        : DateTime.now().difference(ultimo!).inDays;
+    return Card(
+      color: const Color(0xFFFFF1EE),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Faça uma cópia de segurança',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${dias == null ? 'Você ainda não fez nenhuma cópia.' : 'A última cópia foi há $dias dias.'} Fichas, planos e rascunhos ficam só neste aparelho: perder o celular sem cópia é perder o histórico das pacientes. Guarde o arquivo fora do celular (Arquivos no iCloud, e-mail para você mesma ou computador).',
+            ),
+            const SizedBox(height: 8),
+            FilledButton.icon(
+              onPressed: onFeito,
+              icon: const Icon(Icons.download_outlined),
+              label: const Text('Fazer cópia agora'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class ProfissionalPage extends StatefulWidget {
   const ProfissionalPage({super.key, required this.refresh, this.planoAtivo});
   final Future<void> Function() refresh;
@@ -32,6 +69,14 @@ class _ProfissionalPageState extends State<ProfissionalPage> {
   bool importandoPdf = false;
   final arquivosPdf = ArquivosRascunhoPdf();
   List<RascunhoPdf> rascunhosPdf = [];
+  DateTime? ultimoBackup;
+  bool temHistorico = false;
+  bool get _backupAtrasado =>
+      temHistorico &&
+      (ultimoBackup == null ||
+          DateTime.now().difference(ultimoBackup!).inDays >=
+              diasLembreteBackup);
+
   @override
   void initState() {
     super.initState();
@@ -44,8 +89,13 @@ class _ProfissionalPageState extends State<ProfissionalPage> {
     final name = await db.config('profissional_nome') ?? '';
     final reg = await db.config('profissional_registro') ?? '';
     final drafts = await arquivosPdf.listar();
+    final pacientes = await db.pacientes();
+    final feito = await db.config(chaveBackupFeito);
     if (!mounted) return;
     setState(() {
+      ultimoBackup = feito == null ? null : DateTime.tryParse(feito);
+      temHistorico =
+          list.isNotEmpty || drafts.isNotEmpty || pacientes.isNotEmpty;
       plans = list;
       nome = name;
       registro = reg;
@@ -250,6 +300,15 @@ class _ProfissionalPageState extends State<ProfissionalPage> {
                   onChanged: (v) => setState(() => search = v),
                 ),
                 const SizedBox(height: 16),
+                if (_backupAtrasado) ...[
+                  _AvisoBackup(
+                    ultimo: ultimoBackup,
+                    onFeito: () async {
+                      if (await _exportarBackup(context)) await _load();
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                ],
                 OutlinedButton.icon(
                   icon: const Icon(Icons.people_outline),
                   label: const Text('Pacientes'),
@@ -831,6 +890,33 @@ class _EditorPlanoPageState extends State<EditorPlanoPage> {
     });
   }
 
+  Future<void> _editarReavaliacao() async {
+    final inicio = Plano.parseDia(data['inicio'] as String);
+    final retorno = Plano.parseDia(data['retorno']['data'] as String);
+    final resultado =
+        await Navigator.push<({Map<String, dynamic>? reavaliacao})>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => EditorReavaliacaoPage(
+              nome: paciente.text.trim().isEmpty
+                  ? 'paciente'
+                  : paciente.text.trim(),
+              inicio: inicio,
+              retorno: retorno,
+              inicial: data['reavaliacao'] as Map<String, dynamic>?,
+            ),
+          ),
+        );
+    if (resultado == null) return;
+    setState(() {
+      if (resultado.reavaliacao == null) {
+        data.remove('reavaliacao');
+      } else {
+        data['reavaliacao'] = resultado.reavaliacao;
+      }
+    });
+  }
+
   Future<void> _remover(String key, int index) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -1144,6 +1230,21 @@ class _EditorPlanoPageState extends State<EditorPlanoPage> {
                 alimentacao == null
                     ? 'Incluir rotina alimentar'
                     : 'Editar rotina e metas de macro',
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text('Reavaliação', style: Theme.of(context).textTheme.titleLarge),
+            Text(
+              _resumoPedidoReavaliacao(data['reavaliacao']),
+              style: const TextStyle(color: apoio),
+            ),
+            OutlinedButton.icon(
+              onPressed: _editarReavaliacao,
+              icon: const Icon(Icons.event_repeat_outlined),
+              label: Text(
+                data['reavaliacao'] == null
+                    ? 'Pedir reavaliação'
+                    : 'Editar reavaliação',
               ),
             ),
             const SizedBox(height: 24),

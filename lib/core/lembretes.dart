@@ -7,6 +7,7 @@ import 'package:timezone/timezone.dart' as tz;
 
 import 'armazenamento.dart';
 import 'plano.dart';
+import 'pre_consulta.dart';
 
 class Lembretes {
   Lembretes._() : plugin = FlutterLocalNotificationsPlugin();
@@ -148,6 +149,28 @@ class Lembretes {
             'Exporte o acompanhamento em .plano e envie à médica antes do retorno.',
         id: serial++,
       ));
+    }
+    final pedido = plano.reavaliacao;
+    if (pedido != null) {
+      final enviada = await Armazenamento.instance.config(
+        chaveReavaliacaoEnviada(plano.id),
+      );
+      final ultima = enviada == null ? null : DateTime.tryParse(enviada);
+      for (final d in pedido.datas) {
+        final day = Plano.parseDia(d);
+        // A reassessment sent on or after this day already answers it.
+        if (ultima != null &&
+            !DateTime(ultima.year, ultima.month, ultima.day).isBefore(day)) {
+          continue;
+        }
+        candidates.add((
+          at: DateTime(day.year, day.month, day.day, 9),
+          title: 'Reavaliação',
+          body:
+              'A médica pediu para você atualizar ${pedido.itens.map(PedidoReavaliacao.nomeCurto).join(', ')} hoje. Abra o app e toque em Reavaliação.',
+          id: serial++,
+        ));
+      }
     }
     final eve = plano.retorno.subtract(const Duration(days: 1));
     candidates.add((
