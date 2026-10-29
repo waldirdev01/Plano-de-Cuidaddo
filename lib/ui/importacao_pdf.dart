@@ -139,8 +139,47 @@ class _ConferenciaPdfPageState extends State<ConferenciaPdfPage> {
     return 'Incluído: ${nomesNivelTreino[p.nivel]} · ${objetivosTreino[p.objetivo]}';
   }
 
+  Future<void> _editarAlimentos(Map<String, dynamic> meal) async {
+    final resultado =
+        await Navigator.push<({List<Map<String, dynamic>>? alimentos})>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => EditorAlimentosRefeicaoPage(
+              titulo: meal['titulo'] as String,
+              inicial: meal['alimentos'] as List?,
+            ),
+          ),
+        );
+    if (resultado == null ||
+        jsonEncode(resultado.alimentos) == jsonEncode(meal['alimentos'])) {
+      return;
+    }
+    _alterar(() {
+      if (resultado.alimentos == null) {
+        meal.remove('alimentos');
+      } else {
+        meal['alimentos'] = resultado.alimentos;
+      }
+    });
+  }
+
+  /// Day total of the foods read from the PDF meals, or null when none has foods.
+  Nutrientes? _somaAlimentos() {
+    final meals = r.lista('refeicoes').where((m) => m['alimentos'] != null);
+    if (meals.isEmpty) return null;
+    return somarAlimentos([
+      for (final m in meals) ...validarAlimentos(m['alimentos']),
+    ]);
+  }
+
   String _resumoAlimentacao() {
     final a = r.data['alimentacao'];
+    final metas = r.data['metasMacro'];
+    if (a is! Map && metas is Map) {
+      final soma = _somaAlimentos();
+      return 'Metas do dia: ${_resumoMetasMacro(metas)}.'
+          '${soma == null ? ' Sem rotina com opções.' : ' Os alimentos das refeições somam ${_numeroMacro(soma.kcal.round())} kcal · proteína ${_numeroMacro(soma.proteina.round())} g · carboidrato ${_numeroMacro(soma.carboidrato.round())} g · gordura ${_numeroMacro(soma.gordura.round())} g.'}';
+    }
     if (a is! Map) {
       return 'Não incluída. Toque para incluir metas de calorias e macros.';
     }
@@ -150,8 +189,11 @@ class _ConferenciaPdfPageState extends State<ConferenciaPdfPage> {
 
   Future<void> _editarAlimentacao() async {
     final atual = r.data['alimentacao'] as Map<String, dynamic>?;
+    final metasAtuais = r.data['metasMacro'] as Map<String, dynamic>?;
     final resultado =
-        await Navigator.push<({Map<String, dynamic>? alimentacao})>(
+        await Navigator.push<
+          ({Map<String, dynamic>? alimentacao, Map<String, double>? metas})
+        >(
           context,
           MaterialPageRoute(
             builder: (_) => EditorAlimentacaoPage(
@@ -160,11 +202,16 @@ class _ConferenciaPdfPageState extends State<ConferenciaPdfPage> {
                   : r.campos['nome'] as String,
               inicial: atual,
               refeicoesPdf: r.lista('refeicoes').length,
+              pdf: true,
+              metasIniciais: metasAtuais,
             ),
           ),
         );
-    if (resultado == null ||
-        jsonEncode(resultado.alimentacao) == jsonEncode(atual)) {
+    if (resultado == null) return;
+    // With a routine its own targets are used; the PDF targets go away.
+    final metas = resultado.alimentacao == null ? resultado.metas : null;
+    if (jsonEncode(resultado.alimentacao) == jsonEncode(atual) &&
+        jsonEncode(metas) == jsonEncode(metasAtuais)) {
       return;
     }
     _alterar(() {
@@ -172,6 +219,11 @@ class _ConferenciaPdfPageState extends State<ConferenciaPdfPage> {
         r.data.remove('alimentacao');
       } else {
         r.data['alimentacao'] = resultado.alimentacao;
+      }
+      if (metas == null) {
+        r.data.remove('metasMacro');
+      } else {
+        r.data['metasMacro'] = metas;
       }
     });
   }
@@ -532,8 +584,10 @@ class _ConferenciaPdfPageState extends State<ConferenciaPdfPage> {
                 ],
               ]),
               _bloco('Refeições reconhecidas (${r.lista('refeicoes').length})', [
-                const Text(
-                  'Texto da médica, sem calcular nutrientes ou inventar porções. Confira os horários e as condições de dispensa antes de exportar.',
+                Text(
+                  _somaAlimentos() == null
+                      ? 'Texto da médica, sem calcular nutrientes ou inventar porções. Confira os horários e as condições de dispensa antes de exportar.'
+                      : 'Texto da médica e alimentos lidos da linha Alimentos, com nutrientes da tabela TACO. A paciente pode trocar cada alimento por outro do mesmo grupo. Confira os horários e as condições de dispensa antes de exportar.',
                 ),
                 const SizedBox(height: 12),
                 for (final meal in r.lista('refeicoes')) ...[
@@ -586,6 +640,33 @@ class _ConferenciaPdfPageState extends State<ConferenciaPdfPage> {
                     'Prescrição de ${meal['titulo']}',
                     lines: 3,
                   ),
+                  if (meal['alimentos'] != null) ...[
+                    Text(
+                      'Alimentos',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    for (final i in validarAlimentos(meal['alimentos']))
+                      Text(
+                        '${i.alimento.nome}: ${_numeroMacro(i.gramas)} g · ${_numeroMacro(i.nutrientes.kcal.round())} kcal',
+                      ),
+                    Text(
+                      'Total: ${_numeroMacro(somarAlimentos(validarAlimentos(meal['alimentos'])).kcal.round())} kcal.',
+                      style: const TextStyle(color: apoio),
+                    ),
+                  ],
+                  if (padronizado && r.data['alimentacao'] == null)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: saving ? null : () => _editarAlimentos(meal),
+                        icon: const Icon(Icons.edit_outlined),
+                        label: Text(
+                          meal['alimentos'] == null
+                              ? 'Incluir alimentos de ${meal['titulo']}'
+                              : 'Editar alimentos de ${meal['titulo']}',
+                        ),
+                      ),
+                    ),
                   const Divider(),
                 ],
                 _campo(

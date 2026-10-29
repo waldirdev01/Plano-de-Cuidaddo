@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'alimentacao.dart';
+import 'alimentos.dart';
 import 'edicao_plano.dart';
 import 'plano.dart';
 import 'padrao_pdf.dart';
@@ -392,6 +393,7 @@ class ArquivosRascunhoPdf {
       }
       for (final meal in r.lista('refeicoes')) {
         strings(meal, ['regra', 'condicao']);
+        if (meal['alimentos'] != null) validarAlimentos(meal['alimentos']);
         if (!['obrigatoria', 'condicional'].contains(meal['regra'])) {
           throw const FormatException(
             'Regra de refeição danificada no rascunho.',
@@ -406,6 +408,10 @@ class ArquivosRascunhoPdf {
         throw const FormatException('Rotina alimentar danificada no rascunho.');
       }
       AlimentacaoPlano.fromMap(alimentacao);
+    }
+    if (r.data['metasMacro'] != null &&
+        validarMetasMacro(r.data['metasMacro']) != null) {
+      throw const FormatException('Metas de macro danificadas no rascunho.');
     }
     // Dates are checked against the plan period in validarConferencia.
     if (r.data['reavaliacao'] != null) {

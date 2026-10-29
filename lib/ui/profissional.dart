@@ -210,6 +210,7 @@ class _ProfissionalPageState extends State<ProfissionalPage> {
       }
       final bytes = await file.readAsBytes();
       final texto = await TextoPdf.ler(bytes);
+      await TabelaAlimentos.carregar();
       final draft = RascunhoPdf.analisar(
         texto,
         nomeArquivo: file.name,
@@ -869,7 +870,9 @@ class _EditorPlanoPageState extends State<EditorPlanoPage> {
   Future<void> _editarAlimentacao() async {
     final atual = data['alimentacao'] as Map<String, dynamic>?;
     final resultado =
-        await Navigator.push<({Map<String, dynamic>? alimentacao})>(
+        await Navigator.push<
+          ({Map<String, dynamic>? alimentacao, Map<String, double>? metas})
+        >(
           context,
           MaterialPageRoute(
             builder: (_) => EditorAlimentacaoPage(
@@ -1559,14 +1562,15 @@ class _PreviaPlanoPageState extends State<PreviaPlanoPage> {
   Widget build(BuildContext context) {
     final hasFood =
         widget.plano.alimentacao != null ||
+        widget.plano.metasMacro != null ||
         widget.plano.refeicoesPrescritas.isNotEmpty;
     final pages = <Widget>[
       HojePage(plano: widget.plano, refresh: () async {}, preview: true),
       SemanaPage(plano: widget.plano, preview: true),
       MeuPlanoPage(plano: widget.plano),
       if (hasFood)
-        if (widget.plano.refeicoesPrescritas.isNotEmpty)
-          RotinaPrescritaPage(plano: widget.plano)
+        if (widget.plano.data['alimentacao'] == null)
+          RotinaPrescritaPage(plano: widget.plano, preview: true)
         else
           AlimentacaoPage(plano: widget.plano, preview: true),
     ];

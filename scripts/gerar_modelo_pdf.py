@@ -51,7 +51,7 @@ def criar_docx(source, destino):
             continue
         if line == 'Plano de Cuidado':
             doc.add_paragraph(line, 'Title')
-        elif line in ['DADOS DO PLANO', 'ORIENTACOES LIVRES'] or re.fullmatch(r'(?:META|REFEICAO) [1-8]', line):
+        elif line in ['DADOS DO PLANO', 'METAS DE MACRO', 'REAVALIACAO', 'ORIENTACOES LIVRES'] or re.fullmatch(r'(?:META|REFEICAO) [1-8]', line):
             p = doc.add_paragraph(line, 'Heading 1')
             if line in ['META 2', 'REFEICAO 3']:
                 p.paragraph_format.page_break_before = True

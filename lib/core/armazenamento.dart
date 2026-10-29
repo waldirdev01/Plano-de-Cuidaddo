@@ -315,6 +315,33 @@ class Armazenamento {
     }
   }
 
+  /// Foods the patient traded on [dia], keyed `refeicao|posicao`, each
+  /// with its own composition (see `ItemAlimento.toMap`).
+  Future<Map<String, Map<String, dynamic>>> trocasAlimentos(
+    String planoId,
+    String dia,
+  ) async {
+    final raw = await config('alimentos_trocas_${planoId}_$dia');
+    if (raw == null) return {};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return {};
+      return {
+        for (final entry in decoded.entries)
+          if (entry.key is String && entry.value is Map)
+            entry.key as String: Map<String, dynamic>.from(entry.value as Map),
+      };
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Future<void> salvarTrocasAlimentos(
+    String planoId,
+    String dia,
+    Map<String, Map<String, dynamic>> trocas,
+  ) => setConfig('alimentos_trocas_${planoId}_$dia', jsonEncode(trocas));
+
   Future<void> salvarSelecoesAlimentacao(
     String planoId,
     String dia,

@@ -1,5 +1,8 @@
+import 'alimentacao.dart';
+import 'alimentos.dart';
 import 'edicao_plano.dart';
 import 'plano.dart';
+import 'pre_consulta.dart';
 
 /// Deterministic, versioned document contract. Free prose is never interpreted.
 class PadraoPdf {
@@ -16,7 +19,8 @@ class PadraoPdf {
   ];
   static String normal(String s) => PerfilPaciente.normalizarNome(s);
 
-  static Map<String, dynamic> ler(String texto) {
+  /// Foods named in a meal must exist in [tabela] (the bundled table by default).
+  static Map<String, dynamic> ler(String texto, {TabelaAlimentos? tabela}) {
     final lines = texto
         .replaceAll('\r', '')
         .replaceAll('\u00a0', ' ')
@@ -38,6 +42,8 @@ class PadraoPdf {
     final metas = <Map<String, dynamic>>[];
     final refeicoes = <Map<String, dynamic>>[];
     String? orientacoes;
+    Map<String, double>? macros;
+    Map<String, String>? reavaliacao;
     var i = 0;
     while (i < lines.length) {
       final line = normal(lines[i]);
@@ -48,6 +54,8 @@ class PadraoPdf {
       final end = switch (line) {
         'dados do plano' => 'fim dados do plano',
         'orientacoes livres' => 'fim orientacoes livres',
+        'metas de macro' => 'fim metas de macro',
+        'reavaliacao' => 'fim reavaliacao',
         _ when RegExp(r'^meta [1-8]$').hasMatch(line) => 'fim meta',
         _ when RegExp(r'^refeicao [1-8]$').hasMatch(line) => 'fim refeicao',
         _ => null,
@@ -72,6 +80,25 @@ class PadraoPdf {
           );
         }
         orientacoes = body.join('\n');
+      } else if (line == 'metas de macro') {
+        if (macros != null) {
+          throw const FormatException(
+            'Mantenha somente um bloco METAS DE MACRO.',
+          );
+        }
+        macros = _macros(
+          _campos(
+            body,
+            ['Calorias', 'Proteina', 'Carboidrato', 'Gordura', 'Fibra'],
+            'METAS DE MACRO',
+            opcionais: ['Fibra'],
+          ),
+        );
+      } else if (line == 'reavaliacao') {
+        if (reavaliacao != null) {
+          throw const FormatException('Mantenha somente um bloco REAVALIACAO.');
+        }
+        reavaliacao = _campos(body, ['Itens', 'Datas'], 'REAVALIACAO');
       } else if (line == 'dados do plano') {
         if (dados.isNotEmpty) {
           throw const FormatException(
@@ -163,13 +190,24 @@ class PadraoPdf {
             'Numere as refeições em sequência, de 1 a 8.',
           );
         }
-        final fields = _campos(body, [
-          'Nome',
-          'Horario',
-          'Regra',
-          'Condicao para dispensar',
-          'Prescricao',
-        ], line);
+        final fields = _campos(
+          body,
+          [
+            'Nome',
+            'Horario',
+            'Regra',
+            'Condicao para dispensar',
+            'Prescricao',
+            'Alimentos',
+          ],
+          line,
+          opcionais: ['Alimentos'],
+        );
+        final alimentos = fields['alimentos'];
+        final t = tabela ?? TabelaAlimentos.padrao;
+        if (alimentos != null && t == null) {
+          throw StateError('Tabela de alimentos não carregada.');
+        }
         refeicoes.add({
           'id': novoId(),
           'titulo': fields['nome'],
@@ -178,6 +216,8 @@ class PadraoPdf {
           'regra': normal(fields['regra']!),
           'condicao': fields['condicao para dispensar'],
           'descricao': fields['prescricao'],
+          if (alimentos != null)
+            'alimentos': [for (final i in t!.lerLinhaPdf(alimentos)) i.toMap()],
         });
       }
     }
@@ -218,6 +258,8 @@ class PadraoPdf {
       'secoes': [
         {'titulo': 'Orientações da médica', 'texto': orientacoes},
       ],
+      'metasMacro': ?macros,
+      if (reavaliacao != null) 'reavaliacao': _reavaliacao(reavaliacao, campos),
     };
     atualizarItens(result);
     final errors = validar(result);
@@ -263,6 +305,64 @@ class PadraoPdf {
       }
     }
     return fields;
+  }
+
+  /// Daily targets typed by the physician, e.g. "2.270 kcal" or "104 g".
+  static Map<String, double> _macros(Map<String, String> fields) {
+    final result = <String, double>{};
+    for (final (rotulo, chave, unidade) in [
+      ('calorias', 'kcal', 'kcal'),
+      ('proteina', 'proteina', 'g'),
+      ('carboidrato', 'carboidrato', 'g'),
+      ('gordura', 'gordura', 'g'),
+      ('fibra', 'fibra', 'g'),
+    ]) {
+      final raw = fields[rotulo];
+      if (raw == null) continue;
+      var valor = normal(raw).replaceAll(RegExp('\\s*$unidade\$'), '');
+      // Calories never carry decimals, so 2.270 is two thousand.
+      if (chave == 'kcal' && RegExp(r'^\d{1,2}\.\d{3}$').hasMatch(valor)) {
+        valor = valor.replaceAll('.', '');
+      }
+      final n = numero(valor);
+      if (n == null) {
+        throw FormatException(
+          'METAS DE MACRO: "$raw" em $rotulo. Use só o número, em $unidade.',
+        );
+      }
+      result[chave] = n;
+    }
+    final erro = validarMetasMacro(result);
+    if (erro != null) throw FormatException('METAS DE MACRO: $erro');
+    return result;
+  }
+
+  static Map<String, dynamic> _reavaliacao(
+    Map<String, String> fields,
+    Map<String, dynamic> campos,
+  ) {
+    final itens = fields['itens']!.split(',').map(normal).toList();
+    if (itens.any((i) => !PedidoReavaliacao.nomesItens.containsKey(i))) {
+      throw const FormatException(
+        'REAVALIACAO: em Itens, use MEDIDAS, SONO e/ou HUMOR separados por vírgula.',
+      );
+    }
+    final pedido = {
+      'itens': itens,
+      'datas': [for (final d in fields['datas']!.split(',')) _data(d.trim())],
+    };
+    try {
+      PedidoReavaliacao.fromMap(
+        pedido,
+        inicio: Plano.parseDia(campos['inicio'] as String),
+        retorno: Plano.parseDia(campos['retorno'] as String),
+      );
+    } on FormatException catch (e) {
+      throw FormatException(
+        'REAVALIACAO: ${e.message.startsWith('Itens') ? 'não repita itens.' : e.message}',
+      );
+    }
+    return pedido;
   }
 
   static String _data(String value) {
@@ -441,6 +541,13 @@ class PadraoPdf {
       }
       if ((meal['descricao'] as String).trim().isEmpty) {
         errors.add('Preencha a prescrição de ${meal['titulo']}.');
+      }
+      if (meal['alimentos'] != null) {
+        try {
+          validarAlimentos(meal['alimentos']);
+        } on FormatException catch (e) {
+          errors.add('${meal['titulo']}: ${e.message}');
+        }
       }
     }
     return errors;

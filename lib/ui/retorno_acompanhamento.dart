@@ -11,7 +11,15 @@ Future<void> _abrirExportacaoAcompanhamento(
       plano.inicio,
       plano.fim,
     );
-    final retorno = RetornoAcompanhamento.criar(plano, registros);
+    final trocas = {
+      for (final dia in registros.keys)
+        dia: await Armazenamento.instance.trocasAlimentos(plano.id, dia),
+    };
+    final retorno = RetornoAcompanhamento.criar(
+      plano,
+      registros,
+      trocas: trocas,
+    );
     if (!context.mounted) return;
     await Navigator.push(
       context,
@@ -369,6 +377,9 @@ class _DetalheRetornoPageState extends State<DetalheRetornoPage> {
           final valores = r.registros[Plano.formatDia(dia)] as Map? ?? const {};
           final treinoDia =
               r.registrosTreino[Plano.formatDia(dia)] as Map? ?? const {};
+          final comidoDia =
+              r.comido[Plano.formatDia(dia)] as Map<String, dynamic>? ??
+              const {};
           return Card(
             child: ExpansionTile(
               key: ValueKey('retorno-dia-${Plano.formatDia(dia)}'),
@@ -395,6 +406,7 @@ class _DetalheRetornoPageState extends State<DetalheRetornoPage> {
                       subtitle: Text(_textoTreinoRetorno(e.key, e.value)),
                     ),
                 ],
+                if (comidoDia.isNotEmpty) ..._comidoRetorno(p, comidoDia),
               ],
             ),
           );
@@ -402,6 +414,53 @@ class _DetalheRetornoPageState extends State<DetalheRetornoPage> {
       ),
     );
   }
+}
+
+/// Foods of the meals marked as done, with the patient's trades and the day
+/// total against the plan's macro targets.
+List<Widget> _comidoRetorno(Plano p, Map<String, dynamic> comido) {
+  final refeicoes = {for (final m in p.refeicoesPrescritas) m['id']: m};
+  final todos = <ItemAlimento>[];
+  final blocos = <Widget>[];
+  for (final e in comido.entries) {
+    final meal = refeicoes[e.key]!;
+    final itens = validarAlimentos(e.value['alimentos']);
+    final base = validarAlimentos(meal['alimentos']);
+    final trocas = (e.value['trocas'] as List).cast<int>().toSet();
+    todos.addAll(itens);
+    blocos.add(
+      ListTile(
+        title: Text(
+          '${meal['titulo']} · ${somarAlimentos(itens).kcal.round()} kcal',
+        ),
+        subtitle: Text(
+          [
+            for (var n = 0; n < itens.length; n++)
+              '${itens[n].alimento.nome} ${_numeroMacro(itens[n].gramas)} g'
+                  '${trocas.contains(n) ? ' (trocou: no plano, ${base[n].alimento.nome} ${_numeroMacro(base[n].gramas)} g)' : ''}',
+          ].join('\n'),
+        ),
+      ),
+    );
+  }
+  final t = somarAlimentos(todos);
+  final metas = p.metasMacro;
+  String linha(String nome, double v, String chave, String un) =>
+      '$nome ${v.round()}${metas?[chave] == null ? '' : ' de ${_numeroMacro(metas![chave]!)}'} $un';
+  return [
+    ListTile(
+      title: const Text(
+        'O que comeu',
+        style: TextStyle(fontWeight: FontWeight.w700),
+      ),
+      subtitle: Text(
+        'Refeições marcadas como feitas e que têm alimentos no plano.\n'
+        '${linha('Calorias', t.kcal, 'kcal', 'kcal')} · ${linha('proteína', t.proteina, 'proteina', 'g')} · '
+        '${linha('carboidrato', t.carboidrato, 'carboidrato', 'g')} · ${linha('gordura', t.gordura, 'gordura', 'g')}',
+      ),
+    ),
+    ...blocos,
+  ];
 }
 
 String _textoRegistroRetorno(dynamic valor, Map<String, dynamic> campo) {

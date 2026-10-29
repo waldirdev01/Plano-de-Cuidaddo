@@ -9,6 +9,8 @@ import 'package:plano_de_cuidado/core/lembretes.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/intl.dart';
+import 'package:plano_de_cuidado/core/alimentos.dart';
 import 'package:plano_de_cuidado/core/armazenamento.dart';
 import 'package:plano_de_cuidado/core/edicao_plano.dart';
 import 'package:plano_de_cuidado/core/exportacao_pdf.dart';
@@ -428,9 +430,13 @@ void main() {
       );
       expect(
         find.textContaining('substitui as 4 refeições lidas do PDF'),
-        findsOneWidget,
+        findsNothing,
       );
       await tap(tester, find.text('Carregar modelo de teste'));
+      expect(
+        find.textContaining('substitui as 4 refeições lidas do PDF'),
+        findsOneWidget,
+      );
       final kcal = find.widgetWithText(TextField, 'Calorias (kcal)');
       expect(tester.widget<TextField>(kcal).controller!.text, '1800');
       await tester.enterText(kcal, 'muito');
@@ -475,6 +481,256 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'PDF: metas de macro sem rotina mantêm as refeições e aparecem para a paciente',
+    (tester) async {
+      final store = ArquivosRascunhoPdf(
+        diretorio: Directory('${dir.path}/pdf-metas'),
+      );
+      final r = rascunhoConferido()
+        ..data['metasMacro'] = {
+          'kcal': 2270,
+          'proteina': 104,
+          'carboidrato': 282,
+          'gordura': 81,
+        };
+      await pump(tester, ConferenciaPdfPage(rascunho: r, arquivos: store));
+      await tap(
+        tester,
+        find.text(
+          'Metas do dia: 2270 kcal · proteína 104 g · carboidrato 282 g · gordura 81 g. Sem rotina com opções.',
+        ),
+      );
+      final kcal = find.widgetWithText(TextField, 'Calorias (kcal)');
+      expect(tester.widget<TextField>(kcal).controller!.text, '2270');
+      await tester.enterText(kcal, '2100');
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Fibra (g), opcional'),
+        '30',
+      );
+      await tap(tester, find.text('Aplicar'));
+      expect(find.textContaining('Metas do dia: 2100 kcal'), findsOneWidget);
+      for (final title in [
+        'Conferi o destinatário, o nome completo e o nascimento.',
+        'Conferi o período, retorno, envio e horários propostos.',
+        'Conferi a fidelidade das metas, refeições e textos e registrei as decisões necessárias.',
+      ]) {
+        await tap(tester, find.text(title));
+      }
+      await tap(tester, find.text('Concluir conferência'));
+      final saved = (await tester.runAsync(store.listar))!.single;
+      final plano = planoDoPdfConferido(
+        saved,
+        profissional: 'Médica Exemplo',
+        registro: 'CRM TESTE',
+      );
+      expect(plano.metasMacro, {
+        'kcal': 2100,
+        'proteina': 104,
+        'carboidrato': 282,
+        'gordura': 81,
+        'fibra': 30,
+      });
+      expect(plano.alimentacao, isNull);
+      expect(plano.refeicoesPrescritas, hasLength(4));
+      await pump(tester, Scaffold(body: RotinaPrescritaPage(plano: plano)));
+      expect(find.text('Metas do dia'), findsOneWidget);
+      expect(find.text('Calorias: 2100 kcal'), findsOneWidget);
+      expect(find.text('Fibra: 30 g'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'paciente troca arroz por batata e o app recalcula a quantidade e o dia',
+    (tester) async {
+      final t = (await tester.runAsync(TabelaAlimentos.carregar))!;
+      final r = rascunhoConferido()
+        ..data['metasMacro'] = {
+          'kcal': 2270,
+          'proteina': 104,
+          'carboidrato': 282,
+          'gordura': 81,
+        };
+      r.lista('refeicoes').first['alimentos'] = [
+        for (final i in t.lerLinhaPdf(
+          'Arroz, tipo 1, cozido 100 g; Feijão, carioca, cozido 80 g',
+        ))
+          i.toMap(),
+      ];
+      final plano = planoDoPdfConferido(
+        r,
+        profissional: 'Médica Exemplo',
+        registro: 'CRM TESTE',
+      );
+      await pump(tester, Scaffold(body: RotinaPrescritaPage(plano: plano)));
+      expect(find.text('Calorias: 189 de 2270 kcal'), findsOneWidget);
+      expect(
+        find.textContaining('3 refeições não têm alimentos'),
+        findsOneWidget,
+      );
+      await tap(tester, find.byTooltip('Trocar alimento').first);
+      expect(
+        find.text('Carboidratos. Quantidades com o mesmo carboidrato.'),
+        findsOneWidget,
+      );
+      await tester.enterText(find.byType(TextField), 'batata, inglesa');
+      await tester.pumpAndSettle();
+      await tap(tester, find.text('Batata, inglesa, cozida'));
+      expect(find.textContaining('235 g'), findsOneWidget);
+      expect(
+        find.textContaining('No plano: Arroz, tipo 1, cozido, 100 g.'),
+        findsOneWidget,
+      );
+      expect(find.text('Calorias: 183 de 2270 kcal'), findsOneWidget);
+      final dia = Plano.formatDia(
+        DateTime.now().isAfter(plano.fim)
+            ? plano.fim
+            : DateTime.now().isBefore(plano.inicio)
+            ? plano.inicio
+            : DateTime.now(),
+      );
+      final salvas = (await tester.runAsync(
+        () => Armazenamento.instance.trocasAlimentos(plano.id, dia),
+      ))!;
+      expect(
+        salvas['${plano.refeicoesPrescritas.first['id']}|0']!['nome'],
+        'Batata, inglesa, cozida',
+      );
+      await tap(tester, find.byTooltip('Voltar ao alimento do plano'));
+      expect(find.text('Calorias: 189 de 2270 kcal'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('PDF: médica inclui e ajusta alimentos de uma refeição', (
+    tester,
+  ) async {
+    final store = ArquivosRascunhoPdf(
+      diretorio: Directory('${dir.path}/pdf-alimentos'),
+    );
+    await pump(
+      tester,
+      ConferenciaPdfPage(rascunho: rascunhoConferido(), arquivos: store),
+    );
+    await tap(tester, find.text('Refeições reconhecidas (4)'));
+    await tap(tester, find.text('Incluir alimentos de Café da manhã'));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 300)),
+    );
+    await tester.pumpAndSettle();
+    await tap(tester, find.text('Adicionar alimento'));
+    await tester.enterText(find.byType(TextField).last, 'arroz, tipo 1, coz');
+    await tester.pumpAndSettle();
+    await tap(tester, find.text('Arroz, tipo 1, cozido'));
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Gramas de Arroz, tipo 1, cozido'),
+      '150',
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Total: 192 kcal'), findsOneWidget);
+    await tap(tester, find.text('Aplicar'));
+    expect(
+      find.text('Arroz, tipo 1, cozido: 150 g · 192 kcal'),
+      findsOneWidget,
+    );
+    expect(find.text('Editar alimentos de Café da manhã'), findsOneWidget);
+    for (final title in [
+      'Conferi o destinatário, o nome completo e o nascimento.',
+      'Conferi o período, retorno, envio e horários propostos.',
+      'Conferi a fidelidade das metas, refeições e textos e registrei as decisões necessárias.',
+    ]) {
+      await tap(tester, find.text(title));
+    }
+    await tap(tester, find.text('Concluir conferência'));
+    final saved = (await tester.runAsync(store.listar))!.single;
+    final plano = planoDoPdfConferido(
+      saved,
+      profissional: 'Médica Exemplo',
+      registro: 'CRM TESTE',
+    );
+    final itens = validarAlimentos(plano.refeicoesPrescritas[0]['alimentos']);
+    expect(itens.single.gramas, 150);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('troca menos indicada avisa que há opções melhores', (
+    tester,
+  ) async {
+    final t = (await tester.runAsync(TabelaAlimentos.carregar))!;
+    final r = rascunhoConferido();
+    r.lista('refeicoes').first['alimentos'] = [
+      for (final i in t.lerLinhaPdf('Arroz, tipo 1, cozido 150 g')) i.toMap(),
+    ];
+    final plano = planoDoPdfConferido(r, profissional: 'M', registro: 'R');
+    await pump(tester, Scaffold(body: RotinaPrescritaPage(plano: plano)));
+    await tap(tester, find.byTooltip('Trocar alimento'));
+    await tester.enterText(find.byType(TextField), 'recheado com chocolate');
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Menos indicadas: mais calorias ou ultraprocessados'),
+      findsOneWidget,
+    );
+    await tap(tester, find.text('Biscoito, doce, recheado com chocolate'));
+    expect(find.text('Há opções melhores'), findsOneWidget);
+    expect(find.textContaining('Melhores trocas:'), findsOneWidget);
+    await tap(tester, find.text('Trocar mesmo assim'));
+    expect(
+      find.textContaining('Menos indicada: ultraprocessado'),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('médica vê no acompanhamento o que a paciente comeu', (
+    tester,
+  ) async {
+    final t = (await tester.runAsync(TabelaAlimentos.carregar))!;
+    final now = DateTime.now();
+    final hoje = DateTime(now.year, now.month, now.day);
+    final r = rascunhoConferido()
+      ..data['metasMacro'] = {
+        'kcal': 2270,
+        'proteina': 104,
+        'carboidrato': 282,
+        'gordura': 81,
+      };
+    r.campos['inicio'] = Plano.formatDia(hoje);
+    r.campos['fim'] = Plano.formatDia(hoje.add(const Duration(days: 1)));
+    r.campos['retorno'] = Plano.formatDia(hoje.add(const Duration(days: 2)));
+    r.lista('refeicoes').first['alimentos'] = [
+      for (final i in t.lerLinhaPdf('Arroz, tipo 1, cozido 150 g')) i.toMap(),
+    ];
+    final plano = planoDoPdfConferido(r, profissional: 'M', registro: 'R');
+    final id = plano.refeicoesPrescritas.first['id'] as String;
+    final dia = Plano.formatDia(hoje);
+    final retorno = RetornoAcompanhamento.criar(
+      plano,
+      {
+        dia: {id: 'feito'},
+      },
+      trocas: {
+        dia: {
+          '$id|0': ItemAlimento(
+            t.porNome('Batata, inglesa, cozida')!,
+            355,
+          ).toMap(),
+        },
+      },
+    );
+    await pump(tester, DetalheRetornoPage(retorno: retorno));
+    await tap(tester, find.text(DateFormat('dd/MM/yyyy').format(hoje)));
+    expect(find.text('O que comeu'), findsOneWidget);
+    expect(find.textContaining('Calorias 185 de 2270 kcal'), findsOneWidget);
+    expect(
+      find.textContaining(
+        'Batata, inglesa, cozida 355 g (trocou: no plano, Arroz, tipo 1, cozido 150 g)',
+      ),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('PDF: tela de conferência aceita fonte ampliada', (tester) async {
     await pump(

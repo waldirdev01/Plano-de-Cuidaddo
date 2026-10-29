@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'alimentacao.dart';
+import 'alimentos.dart';
 import 'pre_consulta.dart';
 import 'treino.dart';
 
@@ -45,6 +46,11 @@ class Plano {
     final raw = data['alimentacao'];
     return raw is Map ? AlimentacaoPlano.fromMap(raw) : null;
   }
+
+  /// Metas diárias de macro vindas do PDF, quando não há rotina estruturada.
+  Map<String, double>? get metasMacro => (data['metasMacro'] as Map?)?.map(
+    (k, v) => MapEntry(k as String, (v as num).toDouble()),
+  );
 
   /// Pedido opcional de reavaliação (ver `core/pre_consulta.dart`).
   PedidoReavaliacao? get reavaliacao => data['reavaliacao'] == null
@@ -179,6 +185,7 @@ class Plano {
               'Uma refeição prescrita está incompleta ou repetida.',
             );
           }
+          if (m['alimentos'] != null) validarAlimentos(m['alimentos']);
           final condicao = PerfilPaciente.normalizarNome(
             m['condicao'] as String,
           );
@@ -240,6 +247,17 @@ class Plano {
           throw const FormatException('O plano alimentar está inválido.');
         }
         AlimentacaoPlano.fromMap(rawAlimentacao);
+      }
+      if (decoded['metasMacro'] != null) {
+        if (decoded['versao'] != 4 || decoded['alimentacao'] != null) {
+          throw const FormatException(
+            'As metas de macro do PDF exigem a versão 4, sem rotina estruturada.',
+          );
+        }
+        final erro = validarMetasMacro(decoded['metasMacro']);
+        if (erro != null) {
+          throw FormatException('Metas de macro do plano: $erro');
+        }
       }
       if (decoded['treino'] != null) {
         PrescricaoTreino.validar(decoded['treino']);

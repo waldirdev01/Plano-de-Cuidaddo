@@ -38,6 +38,7 @@ Horario: [PREENCHER HH:MM]
 Regra: [PREENCHER OBRIGATORIA ou CONDICIONAL]
 Condicao para dispensar: [PREENCHER condição ou NAO SE APLICA]
 Prescricao: [PREENCHER alimentos e quantidades prescritos]
+Alimentos: [PREENCHER nomes da lista de alimentos com gramas, separados por ponto e vírgula, ou apague esta linha]
 FIM REFEICAO
 
 REFEICAO 2
@@ -46,6 +47,7 @@ Horario: [PREENCHER HH:MM]
 Regra: [PREENCHER OBRIGATORIA ou CONDICIONAL]
 Condicao para dispensar: [PREENCHER condição ou NAO SE APLICA]
 Prescricao: [PREENCHER alimentos e quantidades prescritos]
+Alimentos: [PREENCHER nomes da lista de alimentos com gramas, separados por ponto e vírgula, ou apague esta linha]
 FIM REFEICAO
 
 REFEICAO 3
@@ -54,6 +56,7 @@ Horario: [PREENCHER HH:MM]
 Regra: [PREENCHER OBRIGATORIA ou CONDICIONAL]
 Condicao para dispensar: [PREENCHER condição ou NAO SE APLICA]
 Prescricao: [PREENCHER alimentos e quantidades prescritos]
+Alimentos: [PREENCHER nomes da lista de alimentos com gramas, separados por ponto e vírgula, ou apague esta linha]
 FIM REFEICAO
 
 REFEICAO 4
@@ -62,7 +65,21 @@ Horario: [PREENCHER HH:MM]
 Regra: [PREENCHER OBRIGATORIA ou CONDICIONAL]
 Condicao para dispensar: [PREENCHER condição ou NAO SE APLICA]
 Prescricao: [PREENCHER alimentos e quantidades prescritos]
+Alimentos: [PREENCHER nomes da lista de alimentos com gramas, separados por ponto e vírgula, ou apague esta linha]
 FIM REFEICAO
+
+METAS DE MACRO
+Calorias: [PREENCHER kcal do dia, ou apague este bloco inteiro]
+Proteina: [PREENCHER gramas por dia]
+Carboidrato: [PREENCHER gramas por dia]
+Gordura: [PREENCHER gramas por dia]
+Fibra: [PREENCHER gramas por dia, ou apague esta linha]
+FIM METAS DE MACRO
+
+REAVALIACAO
+Itens: [PREENCHER MEDIDAS, SONO e/ou HUMOR, ou apague este bloco inteiro]
+Datas: [PREENCHER DD/MM/AAAA separadas por vírgula]
+FIM REAVALIACAO
 
 ORIENTACOES LIVRES
 O que vamos cuidar

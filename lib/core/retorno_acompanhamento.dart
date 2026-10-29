@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
 
+import 'alimentos.dart';
 import 'plano.dart';
 import 'treino.dart';
 
@@ -21,9 +22,15 @@ class RetornoAcompanhamento {
   Map<String, dynamic> get registrosTreino =>
       (data['treino'] as Map<String, dynamic>?) ?? const {};
 
+  /// What the patient ate, by date and meal: the foods of meals marked as
+  /// done, with the day's trades. `trocas` lists the traded positions.
+  Map<String, dynamic> get comido =>
+      (data['comido'] as Map<String, dynamic>?) ?? const {};
+
   static RetornoAcompanhamento criar(
     Plano plano,
     Map<String, Map<String, dynamic>> registros, {
+    Map<String, Map<String, Map<String, dynamic>>> trocas = const {},
     DateTime? agora,
   }) {
     final now = agora ?? DateTime.now();
@@ -67,6 +74,24 @@ class RetornoAcompanhamento {
         if (valores.isNotEmpty) treino[dia.key] = valores;
       }
     }
+    final comido = <String, dynamic>{};
+    for (final dia in recorte.entries) {
+      final refeicoes = <String, dynamic>{
+        for (final meal in plano.refeicoesPrescritas)
+          if (meal['alimentos'] != null && dia.value[meal['id']] == 'feito')
+            meal['id'] as String: () {
+              final itens = alimentosDoDia(meal, trocas[dia.key] ?? const {});
+              return {
+                'alimentos': [for (final (i, _) in itens) i.toMap()],
+                'trocas': [
+                  for (var n = 0; n < itens.length; n++)
+                    if (itens[n].$2 != null) n,
+                ],
+              };
+            }(),
+      };
+      if (refeicoes.isNotEmpty) comido[dia.key] = refeicoes;
+    }
     final random = Random.secure();
     return parse(
       jsonEncode({
@@ -82,6 +107,7 @@ class RetornoAcompanhamento {
         'plano': copia,
         'registros': recorte,
         if (treino.isNotEmpty) 'treino': treino,
+        if (comido.isNotEmpty) 'comido': comido,
       }),
       agora: now,
     );
@@ -172,6 +198,44 @@ class RetornoAcompanhamento {
                 !registroTreinoValido(item.key, item.value)) {
               throw const FormatException(
                 'O acompanhamento contém um registro de treino inválido.',
+              );
+            }
+          }
+        }
+      }
+      final comido = d['comido'];
+      if (comido != null) {
+        final refeicoes = {
+          for (final m in p.refeicoesPrescritas)
+            if (m['alimentos'] != null)
+              m['id'] as String: (m['alimentos'] as List).length,
+        };
+        if (comido is! Map<String, dynamic>) {
+          throw const FormatException(
+            'O registro de alimentação está inválido.',
+          );
+        }
+        for (final dia in comido.entries) {
+          final data = Plano.parseDia(dia.key);
+          if (data.isBefore(de) ||
+              data.isAfter(ate) ||
+              dia.value is! Map<String, dynamic>) {
+            throw const FormatException(
+              'Data de alimentação fora do acompanhamento.',
+            );
+          }
+          for (final r in (dia.value as Map<String, dynamic>).entries) {
+            final v = r.value;
+            if (!refeicoes.containsKey(r.key) ||
+                v is! Map ||
+                v.keys.toSet().difference({'alimentos', 'trocas'}).isNotEmpty ||
+                validarAlimentos(v['alimentos']).length != refeicoes[r.key] ||
+                v['trocas'] is! List ||
+                (v['trocas'] as List).any(
+                  (n) => n is! int || n < 0 || n >= refeicoes[r.key]!,
+                )) {
+              throw const FormatException(
+                'O registro de alimentação está inválido.',
               );
             }
           }

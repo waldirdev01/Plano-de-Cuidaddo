@@ -12,6 +12,24 @@ RascunhoPdf exemploPdf([String? text]) => RascunhoPdf.analisar(
   nomeArquivo: 'exemplo.pdf',
   bytes: Uint8List.fromList(utf8.encode('%PDF-FAKE')),
 );
+// Optional blocks, kept out of the shared fixture whose dates other tests shift.
+const blocosOpcionais = '''
+METAS DE MACRO
+Calorias: 1.800 kcal
+Proteina: 110 g
+Carboidrato: 200
+Gordura: 60 g
+Fibra: 25 g
+FIM METAS DE MACRO
+REAVALIACAO
+Itens: MEDIDAS, SONO
+Datas: 24/10/2026, 30/10/2026
+FIM REAVALIACAO
+''';
+final textoComBlocos = textoPlanoPdfTeste.replaceFirst(
+  'ORIENTACOES LIVRES',
+  '${blocosOpcionais}ORIENTACOES LIVRES',
+);
 Matcher erro(String message) => throwsA(
   isA<FormatException>().having(
     (e) => e.message,
@@ -28,9 +46,9 @@ void main() {
       final blocos = <String, Map<String, String>>{};
       var bloco = '';
       final marcador = RegExp(
-        r'^(?:DADOS DO PLANO|META [1-8]|REFEICAO [1-8]|ORIENTACOES LIVRES)$',
+        r'^(?:DADOS DO PLANO|META [1-8]|REFEICAO [1-8]|METAS DE MACRO|REAVALIACAO|ORIENTACOES LIVRES)$',
       );
-      for (final line in textoPlanoPdfTeste.split('\n')) {
+      for (final line in textoComBlocos.split('\n')) {
         if (marcador.hasMatch(line)) {
           bloco = line;
           blocos[bloco] = {};
@@ -54,6 +72,8 @@ void main() {
               return 'Orientação fictícia de referência.';
             }
             final label = line.substring(0, line.indexOf(':'));
+            // Optional line; the fixture meals have no foods.
+            if (label == 'Alimentos') return null;
             final value = blocos[bloco]![label];
             expect(
               value,
@@ -63,14 +83,70 @@ void main() {
             );
             return '$label: $value';
           })
+          .nonNulls
           .join('\n');
       final r = exemploPdf(filled);
       expect(r.lista('pendencias'), isEmpty);
       expect(r.campos['nascimento'], '1990-01-01');
       expect(r.lista('refeicoes')[2]['regra'], 'condicional');
       expect(r.lista('metas').last['alvo'], '4');
+      expect(r.data['metasMacro'], containsPair('kcal', 1800));
+      expect(r.data['reavaliacao'], {
+        'itens': ['medidas', 'sono'],
+        'datas': ['2026-10-24', '2026-10-30'],
+      });
     },
   );
+  test('metas de macro e reavaliação do PDF vão direto para o plano', () {
+    final r = exemploPdf(textoComBlocos);
+    expect(r.data['metasMacro'], {
+      'kcal': 1800,
+      'proteina': 110,
+      'carboidrato': 200,
+      'gordura': 60,
+      'fibra': 25,
+    });
+    (r.data['confirmacoes'] as Map).updateAll((_, _) => true);
+    expect(r.validarConferencia(), isEmpty);
+    final simples = exemploPdf();
+    expect(simples.data.containsKey('metasMacro'), isFalse);
+    expect(simples.data.containsKey('reavaliacao'), isFalse);
+    final semFibra = textoComBlocos.replaceFirst('Fibra: 25 g\n', '');
+    expect(exemploPdf(semFibra).data['metasMacro'].containsKey('fibra'), false);
+  });
+  test('metas de macro e reavaliação do PDF são validadas', () {
+    String trocar(String de, String para) {
+      expect(textoComBlocos, contains(de));
+      return textoComBlocos.replaceFirst(de, para);
+    }
+
+    expect(
+      () => exemploPdf(trocar('Calorias: 1.800 kcal', 'Calorias: 1,8')),
+      erro('Calorias entre 500 e 6000'),
+    );
+    expect(
+      () => exemploPdf(trocar('Proteina: 110 g', 'Proteina: cento e dez')),
+      erro('Use só o número'),
+    );
+    expect(
+      () => exemploPdf(trocar('Gordura: 60 g\n', '')),
+      erro('Preencha "gordura"'),
+    );
+    expect(
+      () => exemploPdf(trocar('Itens: MEDIDAS, SONO', 'Itens: MEDIDAS, PESO')),
+      erro('MEDIDAS, SONO e/ou HUMOR'),
+    );
+    expect(
+      () => exemploPdf(trocar('Datas: 24/10/2026', 'Datas: 01/11/2026')),
+      erro('entre o início do plano e o retorno'),
+    );
+    expect(
+      () => exemploPdf(
+        trocar('24/10/2026, 30/10/2026', '30/10/2026, 24/10/2026'),
+      ),
+      erro('em ordem'),
+    );
+  });
   test('padrão 1 extrai campos explícitos e separa lanche condicional', () {
     final r = exemploPdf();
     expect(r.data['padraoPdf'], PadraoPdf.versao);

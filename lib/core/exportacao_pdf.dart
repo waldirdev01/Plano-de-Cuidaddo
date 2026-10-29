@@ -79,12 +79,16 @@ Plano planoDoPdfConferido(
             'regra': m['regra'],
             'condicao': m['condicao'],
             'descricao': m['descricao'],
+            if (m['alimentos'] != null)
+              'alimentos': copiarDados({'a': m['alimentos']})['a'],
           },
     ],
     'linkMonteSeuPrato': c['link'],
     'secoes': copiarDados({'s': r.lista('secoes')})['s'],
     'pdf': copiarDados(r.data['pdf'] as Map<String, dynamic>),
     if (alimentacao != null) 'alimentacao': copiarDados(alimentacao),
+    if (alimentacao == null && r.data['metasMacro'] != null)
+      'metasMacro': copiarDados(r.data['metasMacro'] as Map<String, dynamic>),
     if (r.data['reavaliacao'] != null)
       'reavaliacao': copiarDados(r.data['reavaliacao'] as Map<String, dynamic>),
     if (r.data['treino'] != null)

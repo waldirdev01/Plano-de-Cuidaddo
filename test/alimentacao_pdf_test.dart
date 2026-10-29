@@ -40,7 +40,10 @@ void main() {
 
   test('rotina danificada no rascunho não é exportada nem restaurada', () {
     final r = rascunhoConferido();
-    r.data['alimentacao'] = {'titulo': 'x', 'meta': {'kcal': 1}};
+    r.data['alimentacao'] = {
+      'titulo': 'x',
+      'meta': {'kcal': 1},
+    };
     expect(
       () => ArquivosRascunhoPdf.validarParaRestaurar(
         jsonDecode(jsonEncode(r.data)),
@@ -48,5 +51,28 @@ void main() {
       throwsFormatException,
     );
     expect(() => exportar(r), throwsFormatException);
+  });
+
+  test('metas de macro do PDF vão no plano só quando não há rotina', () {
+    final r = rascunhoConferido()
+      ..data['metasMacro'] = {
+        'kcal': 2270,
+        'proteina': 104,
+        'carboidrato': 282,
+        'gordura': 81,
+      };
+    final p = exportar(r);
+    expect(p.metasMacro!['kcal'], 2270);
+    expect(p.refeicoesPrescritas, hasLength(4));
+    r.data['alimentacao'] = AlimentacaoPlano.modeloTeste();
+    expect(exportar(r).data.containsKey('metasMacro'), isFalse);
+    final dados = jsonDecode(jsonEncode(p.data)) as Map<String, dynamic>;
+    dados['alimentacao'] = AlimentacaoPlano.modeloTeste();
+    dados['refeicoesPrescritas'] = [];
+    expect(() => Plano.parse(jsonEncode(dados)), throwsFormatException);
+    dados.remove('alimentacao');
+    (dados['metasMacro'] as Map)['kcal'] = 20;
+    expect(() => Plano.parse(jsonEncode(dados)), throwsFormatException);
+    expect(validarMetasMacro({...?p.metasMacro, 'sodio': 2}), isNotNull);
   });
 }

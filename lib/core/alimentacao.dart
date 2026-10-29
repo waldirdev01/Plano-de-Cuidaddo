@@ -53,6 +53,28 @@ class Nutrientes {
       pick(target) - pick(this);
 }
 
+/// Daily macro targets written in the PDF plan, without a structured routine.
+/// Returns the problem in plain words, or null when the targets are valid.
+String? validarMetasMacro(Object? raw) {
+  if (raw is! Map) return 'metas inválidas.';
+  const faixas = {
+    'kcal': (500.0, 6000.0, 'Calorias entre 500 e 6000 kcal'),
+    'proteina': (1.0, 500.0, 'Proteína entre 1 e 500 g'),
+    'carboidrato': (1.0, 1000.0, 'Carboidrato entre 1 e 1000 g'),
+    'gordura': (1.0, 500.0, 'Gordura entre 1 e 500 g'),
+    'fibra': (1.0, 150.0, 'Fibra entre 1 e 150 g'),
+  };
+  if (raw.keys.any((k) => !faixas.containsKey(k))) return 'metas inválidas.';
+  for (final e in faixas.entries) {
+    final v = raw[e.key];
+    if (v == null && e.key == 'fibra') continue;
+    if (v is! num || !v.isFinite || v < e.value.$1 || v > e.value.$2) {
+      return 'informe ${e.value.$3}.';
+    }
+  }
+  return null;
+}
+
 class OpcaoAlimentar {
   const OpcaoAlimentar({
     required this.id,

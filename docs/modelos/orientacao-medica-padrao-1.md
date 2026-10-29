@@ -37,6 +37,36 @@ Mantenha de uma a oito refeições quando houver meta REFEICOES. Não precisam s
 
 Em Regra, escreva OBRIGATORIA ou CONDICIONAL. Para obrigatória, preencha Condicao para dispensar com NAO SE APLICA. Para condicional, descreva a exceção autorizada, por exemplo, “quando não sentir fome”. A condição fica separada da lista de refeições obrigatórias. Alimentos e quantidades vão em Prescricao. Mantenha a orientação geral coerente com as exceções; o aplicativo não procura contradições em frases livres.
 
+## Alimentos de cada refeição (opcional)
+
+A linha Alimentos transforma a refeição numa calculadora para a paciente. Liste os alimentos com as gramas, separados por ponto e vírgula, usando os nomes exatos da lista de alimentos do app (tabela TACO). Exemplo apenas de preenchimento:
+
+Alimentos: Arroz, tipo 1, cozido 150 g; Feijão, carioca, cozido 100 g; Frango, peito, sem pele, grelhado 100 g
+
+Mantenha a Prescricao com as medidas caseiras, como 6 colheres de sopa de arroz; ela aparece para a paciente como orientação. Se um nome não estiver na lista, o app recusa o PDF e sugere nomes parecidos. Use no máximo 15 alimentos por refeição. Sem a linha Alimentos, a refeição continua só com o texto.
+
+No app, a paciente vê cada alimento com as gramas e os nutrientes, e quanto o dia soma contra as metas de macro. Se não quiser um alimento naquele dia, toca em trocar e escolhe outro do mesmo grupo: o app calcula a quantidade que mantém o mesmo carboidrato (cereais, tubérculos, leguminosas e frutas), a mesma proteína (carnes, ovos, peixes, leite e derivados) ou a mesma gordura (óleos e oleaginosas). Verduras trocam pela mesma quantidade em gramas. A troca vale só para aquele dia e pode ser desfeita. O plano que você enviou não muda. Trocas fritas, ultraprocessadas ou bem mais calóricas aparecem separadas como menos indicadas; se a paciente escolher uma, o app avisa e mostra até três opções melhores.
+
+Na conferência, cada refeição tem o botão Incluir alimentos ou Editar alimentos: dá para acrescentar, remover ou mudar as gramas buscando na tabela, sem refazer o PDF. Quando a paciente exporta o acompanhamento, o arquivo traz o que ela comeu em cada dia (as refeições marcadas como feitas, já com as trocas), e você vê o total do dia contra as metas e o que foi trocado.
+
+## Metas de macro e reavaliação (opcionais)
+
+O bloco METAS DE MACRO leva as metas do dia todo. Escreva só o número em cada campo: Calorias em kcal; Proteina, Carboidrato, Gordura e Fibra em gramas. Fibra é opcional; se não quiser informar, apague a linha. Exemplo apenas de preenchimento:
+
+Calorias: 2270
+Proteina: 104
+Carboidrato: 282
+Gordura: 81
+
+A paciente vê essas metas na aba Alimentação, acima das refeições. O aplicativo não confere se as refeições somam esses valores. Se não for definir metas, apague o bloco inteiro, de METAS DE MACRO até FIM METAS DE MACRO.
+
+O bloco REAVALIACAO pede à paciente que atualize alguns dados ao longo do plano. Em Itens, escreva MEDIDAS, SONO e/ou HUMOR, separados por vírgula. Em Datas, escreva de uma a doze datas DD/MM/AAAA, em ordem, separadas por vírgula, entre o início dos registros e o retorno. Em cada data a paciente recebe um lembrete às 9h, responde no app e envia o arquivo, que entra na ficha dela. Exemplo:
+
+Itens: MEDIDAS, SONO
+Datas: 10/11/2026, 24/11/2026
+
+Se não for pedir reavaliação, apague o bloco inteiro, de REAVALIACAO até FIM REAVALIACAO. Os dois blocos também podem ser ajustados no app durante a conferência.
+
 ## Inclua o link e as orientações
 
 Link pessoal deve conter o endereço completo, começando com https e incluindo a parte #p=..., ou NENHUM. Copie o destino do link pessoal do Monte seu prato, não somente o nome visível do site. O aplicativo não abre esse link durante a leitura.

@@ -10,7 +10,8 @@
 | `core/edicao_plano.dart` | Criar/duplicar, IDs, modelos de campos |
 | `core/armazenamento.dart` | SQLite, seleção, planos, registros, config e backup |
 | `core/pre_consulta.dart` | Envelopes de pré-consulta e reavaliação, listas fixas, IMC e relação cintura-quadril |
-| `core/alimentacao.dart` | Opções, porções, rotina e soma de nutrientes |
+| `core/alimentacao.dart` | Opções, porções, rotina e soma de nutrientes; validação das metas de macro do PDF |
+| `core/alimentos.dart` | Tabela TACO embutida (`assets/alimentos/taco.json`, gerada por `scripts/gerar_tabela_alimentos.py`), grupos de troca, equivalência e leitura da linha Alimentos do PDF |
 | `core/lembretes.dart` | Agendamento local e limite de avisos |
 | `core/native_bridge.dart` | EventChannel iOS de arquivos recebidos |
 | `core/importacao_pdf.dart` | Leitor local por MethodChannel, conferência e arquivos de rascunho |
@@ -23,7 +24,7 @@
 | `ui/app.dart` | Entrada, Hoje, Semana, PDF, compartilhamento e ajustes |
 | `ui/profissional.dart` | Perfil, editor, exportação e prévia |
 | `ui/paciente.dart` | Cadastro e máscara do nascimento |
-| `ui/alimentacao.dart` | Rotina e substituições por dia |
+| `ui/alimentacao.dart` | Rotina e substituições por dia; calculadora da paciente nas refeições do PDF (troca de alimento e soma do dia contra as metas) |
 
 ## Persistência
 

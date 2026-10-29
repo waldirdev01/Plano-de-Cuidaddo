@@ -1,9 +1,210 @@
 part of 'app.dart';
 
-/// Prescription text only: no nutrient totals or substitutions are invented.
-class RotinaPrescritaPage extends StatelessWidget {
-  const RotinaPrescritaPage({super.key, required this.plano});
+/// Prescribed meals. Meals with foods from the bundled table become a
+/// calculator: the patient trades a food for today and the grams are worked out
+/// to keep the group's main macro; the day total is compared with the targets.
+class RotinaPrescritaPage extends StatefulWidget {
+  const RotinaPrescritaPage({
+    super.key,
+    required this.plano,
+    this.preview = false,
+  });
   final Plano plano;
+  final bool preview;
+  @override
+  State<RotinaPrescritaPage> createState() => _RotinaPrescritaPageState();
+}
+
+class _RotinaPrescritaPageState extends State<RotinaPrescritaPage> {
+  Map<String, Map<String, dynamic>> trocas = {};
+  TabelaAlimentos? tabela;
+
+  Plano get plano => widget.plano;
+  bool get temAlimentos =>
+      plano.refeicoesPrescritas.any((m) => m['alimentos'] != null);
+
+  String get dia {
+    final now = DateTime.now();
+    final hoje = DateTime(now.year, now.month, now.day);
+    return Plano.formatDia(
+      hoje.isBefore(plano.inicio)
+          ? plano.inicio
+          : hoje.isAfter(plano.fim)
+          ? plano.fim
+          : hoje,
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant RotinaPrescritaPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.plano.id != plano.id) _load();
+  }
+
+  Future<void> _load() async {
+    if (!temAlimentos) return;
+    final t = await TabelaAlimentos.carregar();
+    final salvas = widget.preview
+        ? <String, Map<String, dynamic>>{}
+        : await Armazenamento.instance.trocasAlimentos(plano.id, dia);
+    if (mounted) {
+      setState(() {
+        tabela = t;
+        trocas = salvas;
+      });
+    }
+  }
+
+  /// Today's foods of [meal]: the plan's, with the trades applied.
+  List<(ItemAlimento, ItemAlimento?)> _hoje(Map<String, dynamic> meal) =>
+      alimentosDoDia(meal, trocas);
+
+  Future<void> _guardar(String chave, ItemAlimento? item) async {
+    setState(() {
+      if (item == null) {
+        trocas.remove(chave);
+      } else {
+        trocas[chave] = item.toMap();
+      }
+    });
+    if (!widget.preview) {
+      await Armazenamento.instance.salvarTrocasAlimentos(plano.id, dia, trocas);
+    }
+  }
+
+  Future<void> _trocar(
+    String chave,
+    ItemAlimento atual,
+    ItemAlimento doPlano,
+  ) async {
+    final t = tabela;
+    if (t == null) return;
+    // Equivalence always starts from the plan's food, so trades never drift.
+    final opcoes = t.trocasPara(doPlano);
+    final escolhido = await showModalBottomSheet<ItemAlimento>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _TrocaAlimentoSheet(doPlano: doPlano, opcoes: opcoes),
+    );
+    if (escolhido == null) return;
+    await _guardar(
+      chave,
+      escolhido.alimento.id == doPlano.alimento.id ? null : escolhido,
+    );
+  }
+
+  String _macros(Nutrientes n) =>
+      '${_numeroMacro(n.kcal.round())} kcal · P ${_numeroMacro(n.proteina)} · C ${_numeroMacro(n.carboidrato)} · G ${_numeroMacro(n.gordura)}';
+
+  Widget _metas(Map<String, double> metas) {
+    final calcula = temAlimentos && tabela != null;
+    final total = calcula
+        ? somarAlimentos([
+            for (final meal in plano.refeicoesPrescritas)
+              for (final (item, _) in _hoje(meal)) item,
+          ])
+        : null;
+    final semAlimentos = plano.refeicoesPrescritas
+        .where((m) => m['alimentos'] == null)
+        .length;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Metas do dia', style: Theme.of(context).textTheme.titleLarge),
+            Text(
+              total == null
+                  ? 'Somando todas as refeições do dia, conforme a médica definiu.'
+                  : 'Quanto o cardápio de hoje soma, contando as suas trocas.',
+              style: const TextStyle(color: apoio),
+            ),
+            const SizedBox(height: 8),
+            for (final e in _rotulosMacros.entries)
+              if (metas[e.key] case final v?)
+                Text(
+                  total == null
+                      ? '${e.value.replaceAll(RegExp(r' \(.*\)'), '')}: ${_numeroMacro(v)} ${e.key == 'kcal' ? 'kcal' : 'g'}'
+                      : '${e.value.replaceAll(RegExp(r' \(.*\)'), '')}: ${_numeroMacro(_valor(total, e.key).round())} de ${_numeroMacro(v)} ${e.key == 'kcal' ? 'kcal' : 'g'}',
+                  style: const TextStyle(fontSize: 18),
+                ),
+            if (total != null && semAlimentos > 0)
+              Text(
+                semAlimentos == 1
+                    ? 'Uma refeição não tem alimentos definidos e não entra na soma.'
+                    : '$semAlimentos refeições não têm alimentos definidos e não entram na soma.',
+                style: const TextStyle(color: apoio),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  double _valor(Nutrientes n, String chave) => switch (chave) {
+    'kcal' => n.kcal,
+    'proteina' => n.proteina,
+    'carboidrato' => n.carboidrato,
+    'gordura' => n.gordura,
+    _ => n.fibra,
+  };
+
+  Widget _alimentos(Map<String, dynamic> meal) {
+    final itens = _hoje(meal);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = 0; i < itens.length; i++)
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(itens[i].$1.alimento.nome),
+            subtitle: Text(
+              '${_numeroMacro(itens[i].$1.gramas)} g · ${_macros(itens[i].$1.nutrientes)}'
+              '${itens[i].$2 == null ? '' : '\nTrocado hoje. No plano: ${itens[i].$2!.alimento.nome}, ${_numeroMacro(itens[i].$2!.gramas)} g.'}'
+              '${itens[i].$2 == null ? '' : switch (motivoMenosIndicada(itens[i].$1, itens[i].$2!)) {
+                      null => '',
+                      final m => '\nMenos indicada: $m. Há opções melhores no botão de troca.',
+                    }}',
+            ),
+            trailing: tabela == null
+                ? null
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (itens[i].$2 != null)
+                        IconButton(
+                          tooltip: 'Voltar ao alimento do plano',
+                          icon: const Icon(Icons.undo),
+                          onPressed: () => _guardar('${meal['id']}|$i', null),
+                        ),
+                      IconButton(
+                        tooltip: 'Trocar alimento',
+                        icon: const Icon(Icons.swap_horiz),
+                        onPressed: () => _trocar(
+                          '${meal['id']}|$i',
+                          itens[i].$1,
+                          itens[i].$2 ?? itens[i].$1,
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+        Text(
+          'Total da refeição: ${_macros(somarAlimentos(itens.map((e) => e.$1)))}',
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) => ListView(
     padding: const EdgeInsets.all(16),
@@ -13,9 +214,12 @@ class RotinaPrescritaPage extends StatelessWidget {
         style: Theme.of(context).textTheme.headlineSmall,
       ),
       const SizedBox(height: 8),
-      const Text(
-        'Prescrição conferida pela profissional. Registre cada refeição na aba Hoje. Não há cálculo de nutrientes ou troca automática de alimentos.',
+      Text(
+        temAlimentos
+            ? 'Prescrição conferida pela profissional. Registre cada refeição na aba Hoje. Se não quiser um alimento hoje, toque em trocar: o app calcula a quantidade do novo alimento.'
+            : 'Prescrição conferida pela profissional. Registre cada refeição na aba Hoje. Não há cálculo de nutrientes ou troca automática de alimentos.',
       ),
+      if (plano.metasMacro case final metas?) _metas(metas),
       for (final meal in plano.refeicoesPrescritas)
         Card(
           child: Padding(
@@ -33,9 +237,25 @@ class RotinaPrescritaPage extends StatelessWidget {
                       : 'Refeição obrigatória',
                 ),
                 const SizedBox(height: 8),
+                if (meal['alimentos'] != null) ...[
+                  _alimentos(meal),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Orientação da médica',
+                    style: TextStyle(color: apoio),
+                  ),
+                ],
                 SelectableText(meal['descricao'] as String),
               ],
             ),
+          ),
+        ),
+      if (temAlimentos)
+        const Padding(
+          padding: EdgeInsets.only(top: 8),
+          child: Text(
+            'Valores estimados pela $fonteAlimentos',
+            style: TextStyle(color: apoio, fontSize: 13),
           ),
         ),
       if ((plano.data['linkMonteSeuPrato'] as String? ?? '').isNotEmpty) ...[
@@ -57,6 +277,151 @@ class RotinaPrescritaPage extends StatelessWidget {
       ],
     ],
   );
+}
+
+class _TrocaAlimentoSheet extends StatefulWidget {
+  const _TrocaAlimentoSheet({required this.doPlano, required this.opcoes});
+  final ItemAlimento doPlano;
+  final List<ItemAlimento> opcoes;
+  @override
+  State<_TrocaAlimentoSheet> createState() => _TrocaAlimentoSheetState();
+}
+
+class _TrocaAlimentoSheetState extends State<_TrocaAlimentoSheet> {
+  String busca = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final grupo = gruposAlimentos[widget.doPlano.alimento.grupo]!;
+    final mantem = switch (grupo.chave) {
+      'gramas' => 'Mesma quantidade em gramas.',
+      'kcal' => 'Quantidades com as mesmas calorias.',
+      'carboidrato' => 'Quantidades com o mesmo carboidrato.',
+      'proteina' => 'Quantidades com a mesma proteína.',
+      _ => 'Quantidades com a mesma gordura.',
+    };
+    final chave = PerfilPaciente.normalizarNome(busca);
+    final achadas = widget.opcoes.where(
+      (o) => PerfilPaciente.normalizarNome(o.alimento.nome).contains(chave),
+    );
+    final boas = [
+      for (final o in achadas)
+        if (motivoMenosIndicada(o, widget.doPlano) == null) o,
+    ];
+    final outras = [
+      for (final o in achadas)
+        if (motivoMenosIndicada(o, widget.doPlano) != null) o,
+    ];
+    // Plan food first, then good trades, then a labelled block of worse ones.
+    final linhas = <Object>[
+      if (busca.trim().isEmpty) widget.doPlano,
+      ...boas,
+      if (outras.isNotEmpty) 'Menos indicadas',
+      ...outras,
+    ];
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.85,
+      maxChildSize: 0.95,
+      builder: (context, scroll) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Trocar ${widget.doPlano.alimento.nome} (${_numeroMacro(widget.doPlano.gramas)} g)',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                Text(
+                  '${grupo.nome}. $mantem',
+                  style: const TextStyle(color: apoio),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  decoration: const InputDecoration(
+                    labelText: 'Buscar alimento',
+                    prefixIcon: Icon(Icons.search),
+                  ),
+                  onChanged: (v) => setState(() => busca = v),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: linhas.isEmpty
+                ? const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text('Nenhum alimento deste grupo com esse nome.'),
+                  )
+                : ListView.builder(
+                    controller: scroll,
+                    itemCount: linhas.length,
+                    itemBuilder: (_, i) {
+                      final linha = linhas[i];
+                      if (linha is String) {
+                        return const Padding(
+                          padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
+                          child: Text(
+                            'Menos indicadas: mais calorias ou ultraprocessados',
+                            style: TextStyle(
+                              color: alerta,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        );
+                      }
+                      final o = linha as ItemAlimento;
+                      final doPlano = identical(o, widget.doPlano);
+                      final motivo = doPlano
+                          ? null
+                          : motivoMenosIndicada(o, widget.doPlano);
+                      return ListTile(
+                        title: Text(o.alimento.nome),
+                        subtitle: Text(
+                          '${_numeroMacro(o.gramas)} g · ${_numeroMacro(o.nutrientes.kcal.round())} kcal'
+                          '${doPlano ? ' · como está no plano' : ''}'
+                          '${motivo == null ? '' : ' · $motivo'}',
+                        ),
+                        onTap: () => _escolher(o, motivo),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _escolher(ItemAlimento o, String? motivo) async {
+    if (motivo != null) {
+      final melhores = melhoresTrocas(widget.opcoes, widget.doPlano);
+      final seguir = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Há opções melhores'),
+          content: Text(
+            '${o.alimento.nome}: $motivo em relação ao plano.'
+            '${melhores.isEmpty ? '' : '\n\nMelhores trocas:\n${melhores.map((m) => '• ${m.alimento.nome}, ${_numeroMacro(m.gramas)} g').join('\n')}'}',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Escolher outra'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Trocar mesmo assim'),
+            ),
+          ],
+        ),
+      );
+      if (seguir != true || !mounted) return;
+    }
+    Navigator.pop(context, o);
+  }
 }
 
 class AlimentacaoPage extends StatefulWidget {
@@ -497,20 +862,29 @@ String _numeroMacro(num v) => v == v.roundToDouble()
     ? '${v.round()}'
     : v.toStringAsFixed(1).replaceAll('.', ',');
 
+String _resumoMetasMacro(Map<dynamic, dynamic> m) =>
+    '${_numeroMacro(m['kcal'] as num)} kcal · proteína ${_numeroMacro(m['proteina'] as num)} g · carboidrato ${_numeroMacro(m['carboidrato'] as num)} g · gordura ${_numeroMacro(m['gordura'] as num)} g${m['fibra'] == null ? '' : ' · fibra ${_numeroMacro(m['fibra'] as num)} g'}';
+
 /// Structured routine and its daily targets. Returns the block, or null to
-/// remove it; popping without saving returns nothing.
+/// remove it, plus the targets; popping without saving returns nothing.
 class EditorAlimentacaoPage extends StatefulWidget {
   const EditorAlimentacaoPage({
     super.key,
     required this.nome,
     this.inicial,
     this.refeicoesPdf = 0,
+    this.pdf = false,
+    this.metasIniciais,
   });
   final String nome;
   final Map<String, dynamic>? inicial;
 
   /// Prescribed meals read from the PDF, replaced by this routine on export.
   final int refeicoesPdf;
+
+  /// PDF plans may carry daily targets without a structured routine.
+  final bool pdf;
+  final Map<String, dynamic>? metasIniciais;
   @override
   State<EditorAlimentacaoPage> createState() => _EditorAlimentacaoPageState();
 }
@@ -525,6 +899,13 @@ class _EditorAlimentacaoPageState extends State<EditorAlimentacaoPage> {
   void initState() {
     super.initState();
     _usar(widget.inicial == null ? null : copiarDados(widget.inicial!));
+    final m = widget.metasIniciais;
+    if (widget.inicial == null && m != null) {
+      for (final e in metas.entries) {
+        final v = m[e.key];
+        e.value.text = v is num ? _numeroMacro(v) : '';
+      }
+    }
   }
 
   @override
@@ -537,9 +918,12 @@ class _EditorAlimentacaoPageState extends State<EditorAlimentacaoPage> {
 
   void _usar(Map<String, dynamic>? novo) {
     dados = novo;
+    // In a PDF plan the targets typed by the physician win over the routine's.
+    if (widget.pdf && novo == null) return;
     final meta = novo?['meta'] as Map?;
     for (final e in metas.entries) {
       final v = meta?[e.key];
+      if (widget.pdf && e.value.text.trim().isNotEmpty) continue;
       e.value.text = v is num ? _numeroMacro(v) : '';
     }
   }
@@ -564,12 +948,16 @@ class _EditorAlimentacaoPageState extends State<EditorAlimentacaoPage> {
 
   void _salvar() {
     final d = dados;
-    if (d == null) {
-      Navigator.pop(context, (alimentacao: null));
+    final vazias = metas.values.every((c) => c.text.trim().isEmpty);
+    if (d == null && (!widget.pdf || vazias)) {
+      Navigator.pop(context, (alimentacao: null, metas: null));
       return;
     }
     final meta = <String, double>{};
     for (final e in metas.entries) {
+      if (d == null && e.key == 'fibra' && e.value.text.trim().isEmpty) {
+        continue;
+      }
       final t = e.value.text.trim().replaceAll(',', '.');
       final v = RegExp(r'^\d+(?:\.\d+)?$').hasMatch(t)
           ? double.tryParse(t)
@@ -583,6 +971,15 @@ class _EditorAlimentacaoPageState extends State<EditorAlimentacaoPage> {
       }
       meta[e.key] = v;
     }
+    if (d == null) {
+      final erro = validarMetasMacro(meta);
+      if (erro != null) {
+        _message(context, 'Metas do dia: $erro');
+        return;
+      }
+      Navigator.pop(context, (alimentacao: null, metas: meta));
+      return;
+    }
     final novo = copiarDados(d)..['meta'] = meta;
     try {
       AlimentacaoPlano.fromMap(novo);
@@ -590,8 +987,24 @@ class _EditorAlimentacaoPageState extends State<EditorAlimentacaoPage> {
       _message(context, e.message);
       return;
     }
-    Navigator.pop(context, (alimentacao: novo));
+    Navigator.pop(context, (alimentacao: novo, metas: meta));
   }
+
+  List<Widget> _camposMetas({bool fibraOpcional = false}) => [
+    for (final e in metas.entries) ...[
+      TextField(
+        controller: e.value,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        textInputAction: TextInputAction.done,
+        decoration: InputDecoration(
+          labelText: fibraOpcional && e.key == 'fibra'
+              ? 'Fibra (g), opcional'
+              : _rotulosMacros[e.key],
+        ),
+      ),
+      const SizedBox(height: 12),
+    ],
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -603,10 +1016,26 @@ class _EditorAlimentacaoPageState extends State<EditorAlimentacaoPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const Text(
-            'Rotina com opções e nutrientes por porção. A paciente vê a estimativa do dia contra as metas abaixo e pode trocar uma refeição por outra opção da lista.',
+          Text(
+            widget.pdf
+                ? 'Metas de calorias e macros do dia. Sem rotina com opções, a paciente vê estas metas na aba Alimentação, junto das refeições do PDF. Deixe todos os campos vazios para não enviar metas.'
+                : 'Rotina com opções e nutrientes por porção. A paciente vê a estimativa do dia contra as metas abaixo e pode trocar uma refeição por outra opção da lista.',
           ),
-          if (widget.refeicoesPdf > 0) ...[
+          if (widget.pdf) ...[
+            const SizedBox(height: 16),
+            Text(
+              'Metas do dia',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            ..._camposMetas(fibraOpcional: modelo == null),
+            const SizedBox(height: 8),
+            Text(
+              'Rotina com opções (opcional)',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ],
+          if (widget.refeicoesPdf > 0 && modelo != null) ...[
             const SizedBox(height: 12),
             Text(
               'No arquivo da paciente, esta rotina substitui as ${widget.refeicoesPdf} refeições lidas do PDF e a meta de refeições. O PDF original continua anexado ao plano.',
@@ -625,22 +1054,14 @@ class _EditorAlimentacaoPageState extends State<EditorAlimentacaoPage> {
               '${modelo.refeicoes.length} refeições · ${modelo.refeicoes.fold<int>(0, (n, m) => n + m.opcoes.length)} opções',
               style: const TextStyle(color: apoio),
             ),
-            const SizedBox(height: 16),
-            Text(
-              'Metas do dia',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            for (final e in metas.entries) ...[
-              TextField(
-                controller: e.value,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                textInputAction: TextInputAction.done,
-                decoration: InputDecoration(labelText: _rotulosMacros[e.key]),
+            if (!widget.pdf) ...[
+              const SizedBox(height: 16),
+              Text(
+                'Metas do dia',
+                style: Theme.of(context).textTheme.titleMedium,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
+              ..._camposMetas(),
             ],
             if (padrao != null)
               Text(
@@ -678,6 +1099,247 @@ class _EditorAlimentacaoPageState extends State<EditorAlimentacaoPage> {
             onPressed: _salvar,
             icon: const Icon(Icons.check),
             label: const Text('Aplicar'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Physician: foods and grams of one prescribed meal, editable after the PDF
+/// import. Returns the new list, or null to remove the foods; popping without
+/// applying returns nothing.
+class EditorAlimentosRefeicaoPage extends StatefulWidget {
+  const EditorAlimentosRefeicaoPage({
+    super.key,
+    required this.titulo,
+    this.inicial,
+  });
+  final String titulo;
+  final List<dynamic>? inicial;
+  @override
+  State<EditorAlimentosRefeicaoPage> createState() =>
+      _EditorAlimentosRefeicaoPageState();
+}
+
+class _EditorAlimentosRefeicaoPageState
+    extends State<EditorAlimentosRefeicaoPage> {
+  final itens = <(Alimento, TextEditingController)>[];
+  TabelaAlimentos? tabela;
+
+  @override
+  void initState() {
+    super.initState();
+    for (final i
+        in widget.inicial == null
+            ? const <ItemAlimento>[]
+            : validarAlimentos(widget.inicial)) {
+      itens.add((
+        i.alimento,
+        TextEditingController(text: _numeroMacro(i.gramas)),
+      ));
+    }
+    TabelaAlimentos.carregar().then((t) {
+      if (mounted) setState(() => tabela = t);
+    });
+  }
+
+  @override
+  void dispose() {
+    for (final (_, c) in itens) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  double? _gramas(TextEditingController c) {
+    final t = c.text.trim().replaceAll(',', '.');
+    final v = RegExp(r'^\d+(?:\.\d+)?$').hasMatch(t)
+        ? double.tryParse(t)
+        : null;
+    return v != null && v >= 1 && v <= 2000 ? v : null;
+  }
+
+  Future<void> _adicionar() async {
+    final t = tabela;
+    if (t == null) return;
+    final escolhido = await showModalBottomSheet<Alimento>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _BuscaAlimentoSheet(
+        tabela: t,
+        usados: {for (final (a, _) in itens) a.id},
+      ),
+    );
+    if (escolhido == null) return;
+    setState(() => itens.add((escolhido, TextEditingController(text: '100'))));
+  }
+
+  void _aplicar() {
+    if (itens.isEmpty) {
+      Navigator.pop(context, (alimentos: null));
+      return;
+    }
+    final lista = <Map<String, dynamic>>[];
+    for (final (a, c) in itens) {
+      final g = _gramas(c);
+      if (g == null) {
+        _message(context, 'Informe de 1 a 2000 g em ${a.nome}.');
+        return;
+      }
+      lista.add(ItemAlimento(a, g).toMap());
+    }
+    try {
+      validarAlimentos(lista);
+    } on FormatException catch (e) {
+      _message(context, e.message);
+      return;
+    }
+    Navigator.pop(context, (alimentos: lista));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final validos = [
+      for (final (a, c) in itens)
+        if (_gramas(c) case final g?) ItemAlimento(a, g),
+    ];
+    final total = somarAlimentos(validos);
+    return Scaffold(
+      appBar: AppBar(title: Text('Alimentos: ${widget.titulo}')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          const Text(
+            'A paciente vê estes alimentos com as gramas e os nutrientes da tabela TACO, e pode trocar cada um por outro do mesmo grupo no dia. A prescrição em texto continua como orientação.',
+          ),
+          const SizedBox(height: 12),
+          if (itens.isEmpty)
+            const Text(
+              'Nenhum alimento nesta refeição.',
+              style: TextStyle(color: apoio),
+            ),
+          for (var n = 0; n < itens.length; n++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(itens[n].$1.nome),
+                        Text(switch (_gramas(itens[n].$2)) {
+                          final g? =>
+                            '${_numeroMacro(ItemAlimento(itens[n].$1, g).nutrientes.kcal.round())} kcal',
+                          null => 'Gramas inválidas',
+                        }, style: const TextStyle(color: apoio)),
+                      ],
+                    ),
+                  ),
+                  SizedBox(
+                    width: 96,
+                    child: TextField(
+                      controller: itens[n].$2,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: InputDecoration(
+                        labelText: 'Gramas de ${itens[n].$1.nome}',
+                        floatingLabelBehavior: FloatingLabelBehavior.never,
+                        hintText: 'g',
+                        suffixText: 'g',
+                      ),
+                      onChanged: (_) => setState(() {}),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Remover ${itens[n].$1.nome}',
+                    icon: const Icon(Icons.delete_outline),
+                    onPressed: () =>
+                        setState(() => itens.removeAt(n).$2.dispose()),
+                  ),
+                ],
+              ),
+            ),
+          if (validos.isNotEmpty)
+            Text(
+              'Total: ${_numeroMacro(total.kcal.round())} kcal · proteína ${_numeroMacro(total.proteina)} g · carboidrato ${_numeroMacro(total.carboidrato)} g · gordura ${_numeroMacro(total.gordura)} g',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: tabela == null || itens.length >= maxAlimentosRefeicao
+                ? null
+                : _adicionar,
+            icon: const Icon(Icons.add),
+            label: const Text('Adicionar alimento'),
+          ),
+          const SizedBox(height: 24),
+          FilledButton.icon(
+            onPressed: _aplicar,
+            icon: const Icon(Icons.check),
+            label: const Text('Aplicar'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BuscaAlimentoSheet extends StatefulWidget {
+  const _BuscaAlimentoSheet({required this.tabela, required this.usados});
+  final TabelaAlimentos tabela;
+  final Set<int> usados;
+  @override
+  State<_BuscaAlimentoSheet> createState() => _BuscaAlimentoSheetState();
+}
+
+class _BuscaAlimentoSheetState extends State<_BuscaAlimentoSheet> {
+  String busca = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final chave = PerfilPaciente.normalizarNome(busca);
+    final lista = chave.length < 2
+        ? const <Alimento>[]
+        : [
+            for (final a in widget.tabela.alimentos)
+              if (!widget.usados.contains(a.id) &&
+                  PerfilPaciente.normalizarNome(a.nome).contains(chave))
+                a,
+          ];
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.85,
+      maxChildSize: 0.95,
+      builder: (context, scroll) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: TextField(
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Buscar na tabela de alimentos',
+                prefixIcon: Icon(Icons.search),
+              ),
+              onChanged: (v) => setState(() => busca = v),
+            ),
+          ),
+          Expanded(
+            child: ListView.builder(
+              controller: scroll,
+              itemCount: lista.length,
+              itemBuilder: (_, i) => ListTile(
+                title: Text(lista[i].nome),
+                subtitle: Text(
+                  '${gruposAlimentos[lista[i].grupo]!.nome} · ${_numeroMacro(lista[i].por100.kcal.round())} kcal em 100 g',
+                ),
+                onTap: () => Navigator.pop(context, lista[i]),
+              ),
+            ),
           ),
         ],
       ),

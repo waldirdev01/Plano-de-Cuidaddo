@@ -16,6 +16,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../core/armazenamento.dart';
 import '../core/alimentacao.dart';
+import '../core/alimentos.dart';
 import '../core/edicao_plano.dart';
 import '../core/lembretes.dart';
 import '../core/native_bridge.dart';
@@ -426,6 +427,7 @@ class _EntradaScreenState extends State<EntradaScreen> {
     }
     final hasFood =
         plano?.alimentacao != null ||
+        plano?.metasMacro != null ||
         (plano?.refeicoesPrescritas.isNotEmpty ?? false);
     final hasTreino = plano?.data['treino'] != null;
     final abas = <({Widget pagina, NavigationDestination destino})>[
@@ -438,7 +440,7 @@ class _EntradaScreenState extends State<EntradaScreen> {
       ),
       if (hasFood)
         (
-          pagina: plano!.refeicoesPrescritas.isNotEmpty
+          pagina: plano!.data['alimentacao'] == null
               ? RotinaPrescritaPage(plano: plano!)
               : AlimentacaoPage(plano: plano),
           destino: const NavigationDestination(
